@@ -104,6 +104,10 @@
   .modal h3{margin:0 0 6px}
   .modal input{width:100%;margin-top:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:15px}
   .modal .row{justify-content:space-between}
+  .pwwrap{position:relative}
+  .pwwrap input{padding-right:42px}
+  .eye{position:absolute;right:6px;top:50%;transform:translateY(calc(-50% + 5px));background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;display:flex}
+  .eye:hover{color:var(--txt)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
 </style>
@@ -173,7 +177,13 @@
     <h3 id="authTitle">Entrar</h3>
     <p class="hint" id="authHint">Entre para guardar sua coleção.</p>
     <input id="authEmail" type="email" placeholder="seu e-mail" autocomplete="email">
-    <input id="authPass" type="password" placeholder="senha (mín. 6 caracteres)" autocomplete="current-password">
+    <div class="pwwrap">
+      <input id="authPass" type="password" placeholder="senha (mín. 6 caracteres)" autocomplete="current-password">
+      <button type="button" class="eye" id="authEye" aria-label="Mostrar senha" title="Mostrar senha">
+        <svg id="eyeOpen" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg id="eyeShut" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+    </div>
     <div class="warn" id="authErr"></div>
     <div class="row">
       <button class="link" id="authSwitch">Não tenho conta — criar</button>
@@ -313,7 +323,7 @@ function renderUser() {
   }
 }
 function openAuth() {
-  $('#authErr').textContent = ''; $('#authModal').classList.add('open'); $('#authEmail').focus();
+  $('#authErr').textContent = ''; setPwVisible(false); $('#authModal').classList.add('open'); $('#authEmail').focus();
 }
 function setAuthMode(m) {
   authMode = m;
@@ -322,8 +332,15 @@ function setAuthMode(m) {
   $('#authSwitch').textContent = m === 'in' ? 'Não tenho conta — criar' : 'Já tenho conta — entrar';
   $('#authPass').autocomplete = m === 'in' ? 'current-password' : 'new-password';
 }
+function setPwVisible(v) {
+  $('#authPass').type = v ? 'text' : 'password';
+  $('#eyeOpen').style.display = v ? 'none' : '';
+  $('#eyeShut').style.display = v ? '' : 'none';
+  $('#authEye').title = $('#authEye').ariaLabel = v ? 'Ocultar senha' : 'Mostrar senha';
+}
+$('#authEye').onclick = () => { setPwVisible($('#authPass').type === 'password'); $('#authPass').focus(); };
 $('#authSwitch').onclick = () => setAuthMode(authMode === 'in' ? 'up' : 'in');
-$('#authCancel').onclick = () => $('#authModal').classList.remove('open');
+$('#authCancel').onclick = () => { $('#authModal').classList.remove('open'); setPwVisible(false); };
 $('#authPass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#authGo').click(); });
 $('#authGo').onclick = async () => {
   const email = $('#authEmail').value.trim(), password = $('#authPass').value;
