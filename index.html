@@ -78,6 +78,11 @@
   .rl{display:inline-block;background:#b3261e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;vertical-align:middle;margin-left:8px;white-space:nowrap}
   input.tname{display:block;margin:3px 0 0 42px;width:calc(100% - 42px);max-width:260px;background:transparent;border:1px dashed transparent;color:var(--muted);font-size:12px;padding:2px 5px;border-radius:4px;font-style:italic}
   input.tname:hover,input.tname:focus{border-color:var(--line);background:var(--panel2);color:var(--txt);font-style:normal}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+  th.sortable:hover{color:var(--txt)}
+  th.sortable.on{color:var(--accent)}
+  th .arr{font-size:10px;margin-left:4px;opacity:.55}
+  th.sortable.on .arr{opacity:1}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -876,6 +881,34 @@ $('#csv').onclick = () => {
 
 /* ================= Minha coleção ================= */
 let collBasis = 'usd', collRarity = '';
+let collSort = { key: 'total', dir: -1 };
+const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
+const COLL_COLS = [
+  { key: 'qty', label: 'Qtd', get: o => o.r.quantity, num: true },
+  { key: 'name', label: 'Carta', get: o => o.r.name },
+  { key: 'rarity', label: 'Raridade', get: o => RARITY_ORDER[o.r.rarity] ?? null, num: true },
+  { key: 'set', label: 'Edição', get: o => (o.r.set_name || '') + ' ' + String(o.r.collector_number || '').padStart(6, '0') },
+  { key: 'unit', label: 'Unit.', get: o => o.u, num: true, cls: 'num' },
+  { key: 'unitbrl', label: 'Unit. R$', get: o => o.ub, num: true, cls: 'num' },
+  { key: 'total', label: 'Total R$', get: o => o.tb, num: true, cls: 'num' },
+];
+function collComparator() {
+  const col = COLL_COLS.find(c => c.key === collSort.key) || COLL_COLS[6];
+  const d = collSort.dir;
+  return (a, b) => {
+    const va = col.get(a), vb = col.get(b);
+    const na = va == null || va === '' || (col.num && isNaN(va)), nb = vb == null || vb === '' || (col.num && isNaN(vb));
+    if (na || nb) return na === nb ? a.r.name.localeCompare(b.r.name) : na ? 1 : -1; // vazios sempre no fim
+    const c = col.num ? va - vb : String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base' });
+    return c ? c * d : a.r.name.localeCompare(b.r.name);
+  };
+}
+function collHeaderHtml() {
+  return '<tr>' + COLL_COLS.map(c => {
+    const on = collSort.key === c.key;
+    return `<th class="${c.cls || ''} sortable${on ? ' on' : ''}" data-sort="${c.key}" title="Ordenar por ${c.label}">${c.label}<span class="arr">${on ? (collSort.dir > 0 ? '▲' : '▼') : '↕'}</span></th>`;
+  }).join('') + '<th></th></tr>';
+}
 function renderCollBadge() {
   $('#collCount').textContent = coll ? coll.reduce((s, r) => s + r.quantity, 0) : '–';
 }
@@ -894,7 +927,7 @@ function renderColl() {
     if (tb != null) { total += tb; totalOrig += u * r.quantity; } else noPrice++;
     count += r.quantity;
     return { r, u, ub, tb };
-  }).sort((a, b) => (b.tb ?? -1) - (a.tb ?? -1));
+  }).sort(collComparator());
   const oldest = coll.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
   out.innerHTML = `
     <div class="row" style="margin-top:0">
@@ -912,7 +945,7 @@ function renderColl() {
     <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
-      <tr><th>Qtd</th><th>Carta</th><th>Raridade</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
+      ${collHeaderHtml()}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
         <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
@@ -923,6 +956,12 @@ function renderColl() {
         <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
   $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
+  out.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => {
+    const k = th.dataset.sort, col = COLL_COLS.find(c => c.key === k);
+    if (collSort.key === k) collSort.dir *= -1;
+    else collSort = { key: k, dir: col.num && k !== 'rarity' ? -1 : (k === 'rarity' ? -1 : 1) };
+    renderColl();
+  });
   $('#collRar').onchange = e => { collRarity = e.target.value; renderColl(); };
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
