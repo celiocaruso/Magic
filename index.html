@@ -467,14 +467,15 @@ function hideSugg() { $('#sugg').style.display = 'none'; }
 
 /* ================= Carta única ================= */
 let prints = [], currentPrint = null, currentFinish = 'nonfoil', awaitingChoice = false;
-let lookupAdded = null; // linha criada por ESTA consulta (pode ser desfeita/trocada)
+let lookupAdded = null, lookupQty = 1; // linha criada por ESTA consulta (pode ser desfeita/trocada)
+let pendingQty = 1; // quantidade informada antes de escolher a edição
 let colStatus = { row: null, busy: false, err: '' };
 
 async function pick(name) {
   clearTimeout(acTimer); acSeq++;
   hideSugg();
   $('#q').value = name;
-  lookupAdded = null;
+  lookupAdded = null; pendingQty = 1;
   $('#cardOut').innerHTML = '<p class="status" style="margin-top:20px">buscando edições…</p>';
   try {
     prints = [];
@@ -520,8 +521,8 @@ async function syncCurrent() {
   if (!$('#autoAdd').checked || awaitingChoice) { renderColBox(); return; }
   colStatus.busy = true; renderColBox();
   try {
-    const row = await addToColl(itemFromCard(currentPrint, currentFinish), 1, true);
-    lookupAdded = row.id; colStatus.row = row;
+    const row = await addToColl(itemFromCard(currentPrint, currentFinish), pendingQty, true);
+    lookupAdded = row.id; lookupQty = row.quantity; colStatus.row = row;
     toast(`${row.name} adicionada à coleção`);
   } catch (e) { colStatus.err = e.message; }
   colStatus.busy = false; renderColBox(); renderCollBadge();
@@ -531,7 +532,7 @@ async function syncCurrent() {
 async function changeSelection(print, finish) {
   if (lookupAdded && user) {
     const r = coll && coll.find(x => x.id === lookupAdded);
-    if (r && r.quantity === 1) { try { await removeRow(lookupAdded); } catch {} }
+    if (r && r.quantity === lookupQty) { try { await removeRow(lookupAdded); } catch {} }
     lookupAdded = null;
   }
   currentPrint = print; currentFinish = finish;
@@ -550,7 +551,15 @@ function renderColBox() {
   }
   if (awaitingChoice && !colStatus.row) {
     box.className = 'colbox ask';
-    box.innerHTML = `<span class="st">Qual é a sua?</span><span>Esta carta tem ${prints.length} edições/ilustrações. ${$('#autoAdd').checked ? 'Marque a sua abaixo para adicioná-la à coleção.' : 'Marque abaixo para ver o preço exato.'}</span>`;
+    box.innerHTML = `<span class="st">Qual é a sua?</span><span>Esta carta tem ${prints.length} edições/ilustrações. ${$('#autoAdd').checked ? 'Marque a sua abaixo para adicioná-la à coleção.' : 'Marque abaixo para ver o preço exato.'}</span>
+      ${$('#autoAdd').checked ? `<span style="display:flex;gap:6px;align-items:center;margin-left:auto">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="askQty" type="number" min="1" step="1" value="${pendingQty}"><button class="mini" data-d="1">+</button> unid.</span>` : ''}`;
+    const aq = $('#askQty');
+    if (aq) {
+      const setP = v => { pendingQty = Math.max(1, Math.floor(Number(v)) || 1); aq.value = pendingQty; };
+      aq.addEventListener('change', () => setP(aq.value));
+      aq.addEventListener('keydown', e => { if (e.key === 'Enter') aq.blur(); });
+      box.querySelectorAll('.mini').forEach(b => b.onclick = () => setP(pendingQty + +b.dataset.d));
+    }
     return;
   }
   if (colStatus.busy) { box.className = 'colbox'; box.innerHTML = '<span class="muted">salvando na coleção…</span>'; return; }
@@ -578,9 +587,10 @@ function renderColBox() {
     };
   } else {
     box.className = 'colbox';
-    box.innerHTML = `<span class="muted">Fora da coleção.</span><button class="ghost" id="cbAdd">Adicionar</button>`;
+    box.innerHTML = `<span class="muted">Fora da coleção.</span><span style="display:flex;gap:6px;align-items:center">Tenho <input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"> unid.</span><button class="ghost" id="cbAdd">Adicionar</button>`;
+    $('#addQty').addEventListener('change', e => { pendingQty = Math.max(1, Math.floor(Number(e.target.value)) || 1); e.target.value = pendingQty; });
     $('#cbAdd').onclick = async () => {
-      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish), 1, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
+      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish), pendingQty, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
       catch (e) { toast('Erro: ' + e.message); }
     };
   }
