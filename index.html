@@ -376,16 +376,19 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
 });
 
 /* ================= Autocomplete ================= */
-let acTimer, acItems = [], acIdx = -1;
+let acTimer, acItems = [], acIdx = -1, acSeq = 0;
 $('#q').addEventListener('input', e => {
   clearTimeout(acTimer);
   const v = e.target.value.trim();
   if (v.length < 2) { hideSugg(); return; }
+  const seq = ++acSeq;
   acTimer = setTimeout(async () => {
     try {
       const j = await sf('/cards/autocomplete?q=' + encodeURIComponent(v));
       acItems = j.data.slice(0, 12).map(n => ({ name: n, label: n }));
+      if (seq !== acSeq) return;
       if (!acItems.length && v.length >= 3) acItems = await searchForeign(v);
+      if (seq !== acSeq) return;
       acIdx = -1; showSugg();
     } catch (e) { hideSugg(); $('#cardOut').innerHTML = `<p class="warn">${esc(netMsg(e))}</p>`; }
   }, 300);
@@ -419,6 +422,7 @@ let lookupAdded = null; // linha criada por ESTA consulta (pode ser desfeita/tro
 let colStatus = { row: null, busy: false, err: '' };
 
 async function pick(name) {
+  clearTimeout(acTimer); acSeq++;
   hideSugg();
   $('#q').value = name;
   lookupAdded = null;
