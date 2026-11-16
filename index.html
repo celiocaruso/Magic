@@ -83,6 +83,11 @@
   th.sortable.on{color:var(--accent)}
   th .arr{font-size:10px;margin-left:4px;opacity:.55}
   th.sortable.on .arr{opacity:1}
+  .mana{display:inline-flex;gap:1px;vertical-align:middle;align-items:center}
+  .mana img{width:16px;height:16px;display:block}
+  h2 .mana img{width:20px;height:20px}
+  .mana .sep{color:var(--muted);margin:0 3px;font-size:12px}
+  .cor{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -300,6 +305,31 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': 
 const RARITY_PT = { common: 'Comum', uncommon: 'Incomum', rare: 'Rara', mythic: 'Mítica', special: 'Especial', bonus: 'Bônus' };
 const rarityHtml = (rar, set) => rar ? `<span class="rar ${esc(rar)}" title="Raridade">${RARITY_PT[rar] || esc(rar)}${set ? ' (' + esc(String(set).toUpperCase()) + ')' : ''}</span>` : '';
 const rlHtml = res => res ? '<span class="rl" title="Reserved List: a Wizards se comprometeu a nunca reimprimir esta carta">Reserved List</span>' : '';
+const COLOR_PT = { W: 'Branco', U: 'Azul', B: 'Preto', R: 'Vermelho', G: 'Verde' };
+const COLOR_ORDER = { W: 1, U: 2, B: 3, R: 4, G: 5 };
+const face0 = c => (c.card_faces && c.card_faces[0]) || {};
+const manaCostOf = c => (c.mana_cost != null && c.mana_cost !== '') ? c.mana_cost
+  : (c.card_faces ? c.card_faces.map(f => f.mana_cost || '').filter(Boolean).join(' // ') || null : null);
+const colorsOf = c => c.colors ?? face0(c).colors ?? [];
+function colorLabel(colors, typeLine) {
+  const cs = colors || [];
+  if (!cs.length) return /\bLand\b/.test(typeLine || '') ? 'Terreno (incolor)' : 'Incolor';
+  if (cs.length === 1) return COLOR_PT[cs[0]] || cs[0];
+  return 'Multicolorida (' + cs.map(x => COLOR_PT[x] || x).join('/') + ')';
+}
+function colorKey(colors) { // ordem: Branco, Azul, Preto, Vermelho, Verde, Multicolorida, Incolor
+  const cs = colors || [];
+  if (cs.length === 1) return COLOR_ORDER[cs[0]] || 8;
+  return cs.length > 1 ? 6 : 7;
+}
+function manaHtml(cost) {
+  if (!cost) return '';
+  return '<span class="mana" title="' + esc(cost) + '">' + String(cost).split(' // ').map(part =>
+    (part.match(/\{[^}]+\}/g) || []).map(sym => {
+      const k = sym.slice(1, -1).replace(/\//g, '');
+      return `<img src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(k)}.svg" alt="${esc(sym)}" loading="lazy">`;
+    }).join('')).join('<span class="sep">//</span>') + '</span>';
+}
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
   const p = card.prices || {};
@@ -329,6 +359,7 @@ function itemFromCard(card, finish, typed) {
     price_usd: pr.usd, price_eur: pr.eur,
     rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
     typed_name: typed || null,
+    mana_cost: manaCostOf(card), cmc: card.cmc ?? null, colors: colorsOf(card), type_line: card.type_line || face0(card).type_line || null,
   };
 }
 
@@ -674,9 +705,9 @@ function renderPrint() {
   <div class="card">
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
-      <h2>${esc(c.name)}${rlHtml(c.reserved)}</h2>
+      <h2>${esc(c.name)} ${manaHtml(manaCostOf(c))}${rlHtml(c.reserved)}</h2>
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
-      <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span>${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
+      <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
@@ -880,12 +911,13 @@ $('#csv').onclick = () => {
 };
 
 /* ================= Minha coleção ================= */
-let collBasis = 'usd', collRarity = '';
+let collBasis = 'usd', collRarity = '', collColor = '';
 let collSort = { key: 'total', dir: -1 };
 const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
 const COLL_COLS = [
   { key: 'qty', label: 'Qtd', get: o => o.r.quantity, num: true },
   { key: 'name', label: 'Carta', get: o => o.r.name },
+  { key: 'color', label: 'Cor', get: o => o.r.colors == null ? null : colorKey(o.r.colors) * 100 + (num(o.r.cmc) || 0), num: true },
   { key: 'rarity', label: 'Raridade', get: o => RARITY_ORDER[o.r.rarity] ?? null, num: true },
   { key: 'set', label: 'Edição', get: o => (o.r.set_name || '') + ' ' + String(o.r.collector_number || '').padStart(6, '0') },
   { key: 'unit', label: 'Unit.', get: o => o.u, num: true, cls: 'num' },
@@ -893,7 +925,7 @@ const COLL_COLS = [
   { key: 'total', label: 'Total R$', get: o => o.tb, num: true, cls: 'num' },
 ];
 function collComparator() {
-  const col = COLL_COLS.find(c => c.key === collSort.key) || COLL_COLS[6];
+  const col = COLL_COLS.find(c => c.key === collSort.key) || COLL_COLS.find(c => c.key === 'total');
   const d = collSort.dir;
   return (a, b) => {
     const va = col.get(a), vb = col.get(b);
@@ -921,7 +953,8 @@ function renderColl() {
   if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
   let total = 0, totalOrig = 0, count = 0, noPrice = 0;
-  const view = coll.filter(r => !collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity));
+  const view = coll.filter(r => (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
+    && (!collColor || (collColor === 'M' ? (r.colors || []).length > 1 : collColor === 'C' ? r.colors && !r.colors.length : (r.colors || []).length === 1 && r.colors[0] === collColor)));
   const rows = view.map(r => {
     const u = num(cur === 'usd' ? r.price_usd : r.price_eur), ub = toBRL(u, cur), tb = ub == null ? null : ub * r.quantity;
     if (tb != null) { total += tb; totalOrig += u * r.quantity; } else noPrice++;
@@ -937,11 +970,14 @@ function renderColl() {
       <label class="muted">Raridade:
         <select id="collRar"><option value="">Todas</option>${['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => coll.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('')}${coll.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : ''}</select>
       </label>
+      <label class="muted">Cor:
+        <select id="collCor"><option value="">Todas</option>${[['W', 'Branco'], ['U', 'Azul'], ['B', 'Preto'], ['R', 'Vermelho'], ['G', 'Verde'], ['M', 'Multicolorida'], ['C', 'Incolor']].map(([k, n]) => `<option value="${k}" ${collColor === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      </label>
       <button class="ghost" id="collRefresh">Atualizar preços</button>
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${collRarity ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="total">${fBRL(total)} <small>${collRarity || collColor ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
     <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
@@ -950,6 +986,7 @@ function renderColl() {
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
         <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
+        <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
         <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
         <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
@@ -959,10 +996,11 @@ function renderColl() {
   out.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => {
     const k = th.dataset.sort, col = COLL_COLS.find(c => c.key === k);
     if (collSort.key === k) collSort.dir *= -1;
-    else collSort = { key: k, dir: col.num && k !== 'rarity' ? -1 : (k === 'rarity' ? -1 : 1) };
+    else collSort = { key: k, dir: col.num && k !== 'color' ? -1 : 1 };
     renderColl();
   });
   $('#collRar').onchange = e => { collRarity = e.target.value; renderColl(); };
+  $('#collCor').onchange = e => { collColor = e.target.value; renderColl(); };
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
     try { await setQty(r.id, r.quantity + +b.dataset.d); renderColl(); } catch (e) { toast('Erro: ' + e.message); }
@@ -993,8 +1031,8 @@ function renderColl() {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'nome_digitado', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'nome_digitado', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
@@ -1031,7 +1069,7 @@ async function refreshPrices() {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
-        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved })
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
