@@ -8,7 +8,10 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - **Toda carta avaliada entra na coleção** do usuário, a menos que a opção "Carta da coleção" esteja desmarcada.
 - Avalia listas coladas (formato de exportação de decks) e soma à coleção.
 - Aba "Minha coleção": valor total, ajuste de quantidade, atualização de preços, exportação CSV.
-- Grava uma fotografia diária de preço por impressão consultada (`price_snapshots`) — base para histórico.
+- Quando a carta tem várias edições, mostra todas (com a ilustração) para o usuário marcar qual é a dele; só então entra na coleção.
+- Força de jogo: ranking de popularidade no Commander (EDHREC), Penny Dreadful e legalidade por formato.
+- Histórico de preço por edição e do valor total da coleção (gráficos).
+- Atualização diária automática: o pg_cron chama a Edge Function `refresh-prices` às 07:17 (Brasília), que reavalia todas as cartas de todas as coleções e grava `price_snapshots` e `collection_value_history`.
 
 ## Stack
 - Front: `index.html` (HTML + JS puro, supabase-js via CDN), publicado no GitHub Pages.
@@ -21,10 +24,11 @@ O `index.html` usa só a **chave publicável** do Supabase, que pode ficar no c�
 ## Banco (resumo)
 - `collection_items`: coleção por usuário (`user_id`, `scryfall_id`, `finish`, `quantity`, preços).
 - `price_snapshots`: preço por impressão por dia.
+- `collection_value_history`: valor total da coleção por usuário por dia.
 - `add_to_collection(item jsonb, qty int, only_if_new bool)`: insere ou soma quantidade.
+- `private.app_config`: token da rotina diária (fora da API). Edge Function `refresh-prices` (verify_jwt desligado; valida o token via `verify_cron_token`, executável só pelo service_role).
 
 ## Próximos passos
-- Histórico de preços e gráfico por carta.
 - Preço Brasil (LigaMagic) — depende de parceria/API.
 - Força de jogo (17lands, EDHREC).
 

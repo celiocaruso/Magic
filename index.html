@@ -72,6 +72,29 @@
   .thumb{width:34px;border-radius:3px;vertical-align:middle;margin-right:8px}
   .hint{color:var(--muted);font-size:13px;margin:0 0 10px;line-height:1.5}
   code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+  .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
+  .phead h3{margin:0;font-size:16px}
+  .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:12px;max-height:560px;overflow:auto;padding:2px}
+  .pcard{background:var(--panel2);border:2px solid transparent;border-radius:10px;padding:6px;cursor:pointer;text-align:left;color:var(--txt);position:relative}
+  .pcard:hover{border-color:var(--line)}
+  .pcard.sel{border-color:var(--accent)}
+  .pcard img{width:100%;border-radius:6px;aspect-ratio:488/680;object-fit:cover;background:#111;display:block}
+  .pcard .pn{font-size:12px;font-weight:600;margin-top:5px;line-height:1.25}
+  .pcard .pm{font-size:11px;color:var(--muted)}
+  .pcard .pp{font-size:12px;color:var(--accent);margin-top:2px}
+  .pcard .tagc{position:absolute;top:10px;left:10px;background:var(--ok);color:#06210f;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
+  .colbox.ask{border-color:var(--accent)}
+  .colbox.ask .st{color:var(--accent)}
+  .panel2{margin-top:16px;padding:12px 14px;background:var(--panel2);border-radius:8px;font-size:14px}
+  .panel2 h4{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line)}
+  .chip.legal{border-color:#3d7a51;color:var(--ok)}
+  .chip.banned{border-color:#7a3d3d;color:var(--bad)}
+  .chip.restricted{border-color:#7a6a3d;color:var(--accent)}
+  .chip.not_legal{color:#5d626c}
+  svg.chart{width:100%;height:auto;display:block}
   footer{color:var(--muted);font-size:12px;padding:0 24px 24px;line-height:1.5}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
@@ -328,7 +351,7 @@ if (db) {
     const was = user?.id;
     user = session?.user || null;
     renderUser();
-    if (user?.id !== was) { coll = null; loadColl(); if (currentPrint) syncCurrent(); }
+    if (user?.id !== was) { coll = null; valueHist = null; loadColl(); if (currentPrint) syncCurrent(); }
   });
 }
 
@@ -339,6 +362,7 @@ async function loadColl() {
   const { data, error } = await db.from('collection_items').select('*').order('name');
   if (error) { $('#collOut').innerHTML = `<p class="warn">Erro ao carregar coleção: ${esc(error.message)}</p>`; return; }
   coll = data; renderColl();
+  saveValueToday().then(loadValueHistory).catch(() => {});
 }
 async function addToColl(item, qty = 1, onlyIfNew = false) {
   const { data, error } = await db.rpc('add_to_collection', { item, qty, only_if_new: onlyIfNew });
@@ -417,7 +441,7 @@ function showSugg() {
 function hideSugg() { $('#sugg').style.display = 'none'; }
 
 /* ================= Carta única ================= */
-let prints = [], currentPrint = null, currentFinish = 'nonfoil';
+let prints = [], currentPrint = null, currentFinish = 'nonfoil', awaitingChoice = false;
 let lookupAdded = null; // linha criada por ESTA consulta (pode ser desfeita/trocada)
 let colStatus = { row: null, busy: false, err: '' };
 
@@ -440,8 +464,17 @@ async function pick(name) {
     prints.push(...page.data);
     let guard = 0;
     while (page.has_more && guard++ < 5) { page = await sf(page.next_page); prints.push(...page.data); }
-    currentPrint = prints.find(p => p.prices.usd || p.prices.eur) || prints[0];
-    currentFinish = defaultFinish(currentPrint);
+    if (db && user && !coll) await loadColl();
+    const owned = coll ? prints.find(p => coll.some(r => r.scryfall_id === p.id)) : null;
+    if (owned) {
+      currentPrint = owned;
+      currentFinish = coll.find(r => r.scryfall_id === owned.id).finish;
+      awaitingChoice = false;
+    } else {
+      currentPrint = prints.find(p => p.prices.usd || p.prices.eur) || prints[0];
+      currentFinish = defaultFinish(currentPrint);
+      awaitingChoice = prints.length > 1;
+    }
     renderPrint();
     snapshot(currentPrint).catch(() => {});
     syncCurrent();
@@ -459,7 +492,7 @@ async function syncCurrent() {
   if (!coll) await loadColl();
   const existing = findRow(currentPrint.id, currentFinish);
   if (existing) { colStatus.row = existing; renderColBox(); return; }
-  if (!$('#autoAdd').checked) { renderColBox(); return; }
+  if (!$('#autoAdd').checked || awaitingChoice) { renderColBox(); return; }
   colStatus.busy = true; renderColBox();
   try {
     const row = await addToColl(itemFromCard(currentPrint, currentFinish), 1, true);
@@ -490,6 +523,11 @@ function renderColBox() {
     box.innerHTML = `<span class="muted">Entre para guardar esta carta na sua coleção.</span><button class="ghost" id="cbIn">Entrar</button>`;
     $('#cbIn').onclick = openAuth; return;
   }
+  if (awaitingChoice && !colStatus.row) {
+    box.className = 'colbox ask';
+    box.innerHTML = `<span class="st">Qual é a sua?</span><span>Esta carta tem ${prints.length} edições/ilustrações. ${$('#autoAdd').checked ? 'Marque a sua abaixo para adicioná-la à coleção.' : 'Marque abaixo para ver o preço exato.'}</span>`;
+    return;
+  }
   if (colStatus.busy) { box.className = 'colbox'; box.innerHTML = '<span class="muted">salvando na coleção…</span>'; return; }
   if (colStatus.err) { box.className = 'colbox'; box.innerHTML = `<span class="warn" style="margin:0">Não salvou: ${esc(colStatus.err)}</span>`; return; }
   const r = colStatus.row && coll && coll.find(x => x.id === colStatus.row.id);
@@ -516,8 +554,40 @@ function renderColBox() {
   }
 }
 
+const FORMATS = [['standard','Standard'],['pioneer','Pioneer'],['modern','Modern'],['legacy','Legacy'],['vintage','Vintage'],['commander','Commander'],['pauper','Pauper'],['brawl','Brawl'],['historic','Historic'],['premodern','Premodern'],['oathbreaker','Oathbreaker']];
+const LEG_PT = { legal: 'legal', banned: 'banida', restricted: 'restrita', not_legal: 'não legal' };
+
+function strengthHtml(c) {
+  const lg = c.legalities || {};
+  const chips = FORMATS.filter(([k]) => lg[k]).map(([k, n]) => `<span class="chip ${lg[k]}" title="${LEG_PT[lg[k]] || lg[k]}">${n}${lg[k] === 'banned' ? ' ✕' : lg[k] === 'restricted' ? ' ¹' : ''}</span>`).join('');
+  const parts = [];
+  if (c.edhrec_rank) parts.push(`<b>#${c.edhrec_rank.toLocaleString('pt-BR')}</b> em popularidade no Commander (EDHREC — quanto menor, mais jogada)`);
+  if (c.penny_rank) parts.push(`<b>#${c.penny_rank.toLocaleString('pt-BR')}</b> no Penny Dreadful`);
+  return `<div class="panel2"><h4>Força de jogo</h4>
+    ${parts.length ? `<div style="margin-bottom:8px">${parts.join('<br>')}</div>` : '<div class="muted" style="margin-bottom:8px">Sem ranking de popularidade.</div>'}
+    <div class="chips">${chips}</div></div>`;
+}
+
+function printCardHtml(x, i) {
+  const usd = num(x.prices.usd) ?? num(x.prices.usd_foil) ?? num(x.prices.usd_etched);
+  const foilOnly = x.prices.usd == null && usd != null;
+  const owned = coll && coll.some(r => r.scryfall_id === x.id);
+  const art = x.artist ? ' · ' + x.artist : '';
+  const tags = [x.frame_effects?.includes('showcase') && 'showcase', x.border_color === 'borderless' && 'sem borda', x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
+  const key = (x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags).toLowerCase();
+  return `<button class="pcard ${x.id === currentPrint.id && !awaitingChoice ? 'sel' : ''}" data-i="${i}" data-k="${esc(key)}" title="${esc(x.set_name + art)}">
+    ${owned ? '<span class="tagc">na coleção</span>' : ''}
+    <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
+    <div class="pn">${esc(x.set_name)}</div>
+    <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)}${tags ? ' · ' + esc(tags) : ''}</div>
+    <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') : '<span class="muted">sem preço</span>'}</div>
+  </button>`;
+}
+
 function renderPrint() {
   const c = currentPrint; if (!c) return;
+  const prevScroll = $('#pgrid') ? $('#pgrid').scrollTop : 0;
+  const prevFilter = $('#pfilter') ? $('#pfilter').value : '';
   const p = c.prices;
   const rows = [
     ['nonfoil', num(p.usd), num(p.eur)],
@@ -530,14 +600,10 @@ function renderPrint() {
   if (allUsd.length > 1) {
     const min = allUsd.reduce((a, b) => b.v < a.v ? b : a);
     const max = allUsd.reduce((a, b) => b.v > a.v ? b : a);
-    rangeHtml = `<div class="range"><b>Entre ${prints.length} edições (normal, USD):</b><br>
-      mais barata <span class="brl">${fBRL(toBRL(min.v, 'usd'))}</span> <span class="muted">(${fUSD(min.v)} · ${esc(min.x.set_name)})</span><br>
-      mais cara <span class="brl">${fBRL(toBRL(max.v, 'usd'))}</span> <span class="muted">(${fUSD(max.v)} · ${esc(max.x.set_name)})</span></div>`;
+    rangeHtml = `<div class="range"><b>Entre as ${prints.length} edições (normal):</b>
+      mais barata <span class="brl">${fBRL(toBRL(min.v, 'usd'))}</span> <span class="muted">(${esc(min.x.set_name)})</span> ·
+      mais cara <span class="brl">${fBRL(toBRL(max.v, 'usd'))}</span> <span class="muted">(${esc(max.x.set_name)})</span></div>`;
   }
-  const opts = prints.map((x, i) => {
-    const tag = x.prices.usd ? ' · ' + fUSD(x.prices.usd) : (x.prices.usd_foil ? ' · foil ' + fUSD(x.prices.usd_foil) : '');
-    return `<option value="${i}" ${x.id === c.id ? 'selected' : ''}>${esc(x.set_name)} (${x.set.toUpperCase()} #${esc(x.collector_number)}) · ${x.released_at.slice(0, 4)}${tag}</option>`;
-  }).join('');
   const fins = (c.finishes || ['nonfoil']).map(f => `<option value="${f}" ${f === currentFinish ? 'selected' : ''}>${FINISH_PT[f] || f}</option>`).join('');
   const pu = c.purchase_uris || {}, ru = c.related_uris || {};
   const liga = 'https://www.ligamagic.com.br/?view=cards/card&card=' + encodeURIComponent(c.name);
@@ -547,9 +613,9 @@ function renderPrint() {
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
       <h2>${esc(c.name)}</h2>
-      <div class="sub">${esc(c.type_line || '')} · ${esc(c.rarity)} · ${prints.length} edição(ões) em papel</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select id="printSel">${opts}</select>
+      <div class="sub">${esc(c.type_line || '')} · ${esc(c.rarity)}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -559,6 +625,8 @@ function renderPrint() {
           <td class="num">${fEUR(r[2])}</td><td class="num brl">${fBRL(toBRL(r[2], 'eur'))}</td></tr>`).join('')}
       </table>` : '<p class="warn">Sem preço registrado para esta edição.</p>'}
       <div class="colbox" id="colBox"></div>
+      <div class="panel2" id="histBox"><h4>Histórico de preço desta edição</h4><span class="muted">carregando…</span></div>
+      ${strengthHtml(c)}
       ${rangeHtml}
       <div class="links">
         <a href="${liga}" target="_blank" rel="noopener" style="border-color:var(--accent);color:var(--accent)">Ver preço Brasil na LigaMagic ↗</a>
@@ -568,10 +636,72 @@ function renderPrint() {
         <a href="${c.scryfall_uri}" target="_blank" rel="noopener">Scryfall</a>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${prints.length > 1 ? `
+  <div class="phead">
+    <h3>${awaitingChoice ? '👉 ' : ''}Edições e ilustrações (${prints.length})</h3>
+    <input id="pfilter" placeholder="filtrar por coleção, ano, artista…" value="${esc(prevFilter)}">
+  </div>
+  <div class="pgrid" id="pgrid">${prints.map(printCardHtml).join('')}</div>` : ''}`;
   renderColBox();
-  $('#printSel').onchange = e => { const np = prints[+e.target.value]; changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np)); };
-  $('#finSel').onchange = e => changeSelection(currentPrint, e.target.value);
+  loadCardHistory(c, currentFinish);
+  $('#finSel').onchange = e => { awaitingChoice = false; changeSelection(currentPrint, e.target.value); };
+  const grid = $('#pgrid');
+  if (grid) {
+    grid.scrollTop = prevScroll;
+    grid.querySelectorAll('.pcard').forEach(b => b.onclick = () => {
+      const np = prints[+b.dataset.i];
+      awaitingChoice = false;
+      changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np));
+    });
+    const applyFilter = () => {
+      const q = $('#pfilter').value.trim().toLowerCase();
+      grid.querySelectorAll('.pcard').forEach(b => b.style.display = !q || b.dataset.k.includes(q) ? '' : 'none');
+    };
+    $('#pfilter').oninput = applyFilter;
+    if (prevFilter) applyFilter();
+  }
+}
+
+/* ================= Gráficos ================= */
+function lineChart(pts, fmt = fBRL) {
+  // pts: [{d:'YYYY-MM-DD', v:number}]
+  pts = pts.filter(p => p.v != null && !isNaN(p.v));
+  if (pts.length < 2) return null;
+  const W = 600, H = 160, L = 8, R = 8, T = 14, B = 22;
+  const vs = pts.map(p => p.v), min = Math.min(...vs), max = Math.max(...vs), span = (max - min) || max || 1;
+  const x = i => L + i * (W - L - R) / (pts.length - 1);
+  const y = v => T + (H - T - B) * (1 - (v - min) / span);
+  const path = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join(' ');
+  const area = path + ` L ${x(pts.length - 1).toFixed(1)} ${H - B} L ${x(0).toFixed(1)} ${H - B} Z`;
+  const dd = d => d.slice(8, 10) + '/' + d.slice(5, 7);
+  const first = pts[0].v, last = pts[pts.length - 1].v, ch = first ? (last - first) / first * 100 : 0;
+  return `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>${fmt(last)} <span style="color:${ch >= 0 ? 'var(--ok)' : 'var(--bad)'}">${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch).toFixed(1)}%</span> <span class="muted">desde ${dd(pts[0].d)}</span></span>
+      <span class="muted">mín ${fmt(min)} · máx ${fmt(max)}</span></div>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path d="${area}" fill="rgba(224,168,75,.12)"/>
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      <text x="${L}" y="${H - 6}" fill="var(--muted)" font-size="11">${dd(pts[0].d)}</text>
+      <text x="${W - R}" y="${H - 6}" fill="var(--muted)" font-size="11" text-anchor="end">${dd(pts[pts.length - 1].d)}</text>
+    </svg>`;
+}
+
+async function loadCardHistory(card, finish) {
+  const box = $('#histBox'); if (!box) return;
+  const head = '<h4>Histórico de preço desta edição</h4>';
+  if (!db || !user) { box.innerHTML = head + '<span class="muted">Entre para ver o histórico.</span>'; return; }
+  const { data, error } = await db.from('price_snapshots').select('*').eq('scryfall_id', card.id).order('captured_on').limit(400);
+  if (currentPrint !== card || !$('#histBox')) return;
+  if (error) { box.innerHTML = head + `<span class="warn">${esc(error.message)}</span>`; return; }
+  const col = finish === 'foil' ? ['usd_foil', 'eur_foil'] : finish === 'etched' ? ['usd_etched', null] : ['usd', 'eur'];
+  const pts = data.map(s => {
+    const u = num(s[col[0]]), e = col[1] ? num(s[col[1]]) : null;
+    const v = u != null && s.usd_brl ? u * s.usd_brl : e != null && s.eur_brl ? e * s.eur_brl : null;
+    return { d: s.captured_on, v };
+  });
+  const chart = lineChart(pts);
+  box.innerHTML = head + (chart || `<span class="muted">O histórico começa a partir da primeira consulta${data.length ? ' (' + data[0].captured_on.split('-').reverse().join('/') + ')' : ''}. As cartas da sua coleção são atualizadas todo dia automaticamente, e cada dia vira um ponto deste gráfico.</span>`);
 }
 
 /* ================= Lista ================= */
@@ -717,6 +847,7 @@ function renderColl() {
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
     <div class="total">${fBRL(total)} <small>${count} cartas · ${coll.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
       <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
@@ -741,6 +872,28 @@ function renderColl() {
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
+async function saveValueToday() {
+  if (!db || !user || !coll || !rates.usd) return;
+  let usd = 0, eur = 0, cards = 0;
+  for (const r of coll) { usd += (num(r.price_usd) || 0) * r.quantity; eur += (num(r.price_eur) || 0) * r.quantity; cards += r.quantity; }
+  await db.from('collection_value_history').upsert({ user_id: user.id, captured_on: new Date().toLocaleDateString('sv-SE'),
+    total_usd: Math.round(usd * 100) / 100, total_eur: Math.round(eur * 100) / 100, usd_brl: rates.usd, eur_brl: rates.eur, cards },
+    { onConflict: 'user_id,captured_on' });
+}
+let valueHist = null;
+async function loadValueHistory() {
+  if (!db || !user) return;
+  const { data } = await db.from('collection_value_history').select('*').order('captured_on').limit(730);
+  valueHist = data || [];
+  const box = $('#vhBox'); if (box) box.innerHTML = valueHistHtml();
+}
+function valueHistHtml() {
+  if (!valueHist) return '<span class="muted">carregando…</span>';
+  const cur = collBasis;
+  const pts = valueHist.map(h => ({ d: h.captured_on, v: cur === 'usd' ? num(h.total_usd) * num(h.usd_brl) : num(h.total_eur) * num(h.eur_brl) }));
+  return lineChart(pts) || '<span class="muted">O gráfico aparece a partir do segundo dia: a coleção é reavaliada automaticamente todo dia.</span>';
+}
+
 async function refreshPrices() {
   const btn = $('#collRefresh'); btn.disabled = true;
   try {
@@ -759,6 +912,7 @@ async function refreshPrices() {
     }
     for (const c of found) snapshot(c).catch(() => {});
     renderColl(); toast('Preços atualizados');
+    saveValueToday().then(loadValueHistory).catch(() => {});
   } catch (e) { $('#collStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`; btn.disabled = false; }
 }
 
