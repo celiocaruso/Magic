@@ -76,6 +76,8 @@
   .rar{display:inline-block;font-size:12px;font-weight:600;padding:2px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
   .rar.common{color:#b9bcc4}.rar.uncommon{color:#9fc3d6}.rar.rare{color:#e0c060}.rar.mythic{color:#f07a3a}.rar.special{color:#c58cf0}.rar.bonus{color:#c58cf0}
   .rl{display:inline-block;background:#b3261e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;vertical-align:middle;margin-left:8px;white-space:nowrap}
+  input.tname{display:block;margin:3px 0 0 42px;width:calc(100% - 42px);max-width:260px;background:transparent;border:1px dashed transparent;color:var(--muted);font-size:12px;padding:2px 5px;border-radius:4px;font-style:italic}
+  input.tname:hover,input.tname:focus{border-color:var(--line);background:var(--panel2);color:var(--txt);font-style:normal}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -305,7 +307,15 @@ function defaultFinish(card) {
   if (f.includes('nonfoil')) return 'nonfoil';
   return f[0];
 }
-function itemFromCard(card, finish) {
+// Nome digitado conta como "outro nome" (ex.: português) quando não é só o começo do nome em inglês
+const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function foreignTyped(typed, english) {
+  const a = norm(typed), b = norm(english);
+  if (a.length < 3 || !b) return null;
+  if (b.startsWith(a) || String(english).split('//').some(x => norm(x).startsWith(a))) return null;
+  return String(typed).trim();
+}
+function itemFromCard(card, finish, typed) {
   const pr = priceFor(card, finish);
   return {
     scryfall_id: card.id, oracle_id: card.oracle_id, name: card.name,
@@ -313,6 +323,7 @@ function itemFromCard(card, finish) {
     finish, image_url: img(card).small || img(card).normal || null,
     price_usd: pr.usd, price_eur: pr.eur,
     rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
+    typed_name: typed || null,
   };
 }
 
@@ -471,9 +482,12 @@ let lookupAdded = null, lookupQty = 1; // linha criada por ESTA consulta (pode s
 let pendingQty = 1; // quantidade informada antes de escolher a edição
 let colStatus = { row: null, busy: false, err: '' };
 
+let currentTyped = null;
 async function pick(name) {
   clearTimeout(acTimer); acSeq++;
   hideSugg();
+  const typedRaw = $('#q').value.trim() || name;
+  currentTyped = null;
   $('#q').value = name;
   lookupAdded = null; pendingQty = 1;
   $('#cardOut').innerHTML = '<p class="status" style="margin-top:20px">buscando edições…</p>';
@@ -486,6 +500,7 @@ async function pick(name) {
       if (!f.length) throw new Error('nome não reconhecido — tente o nome em inglês (a LigaMagic mostra abaixo do nome em português)');
       name = f[0].name; $('#q').value = name;
     }
+    currentTyped = foreignTyped(typedRaw, name);
     let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent('!"' + name + '" game:paper'));
     prints.push(...page.data);
     let guard = 0;
@@ -521,7 +536,7 @@ async function syncCurrent() {
   if (!$('#autoAdd').checked || awaitingChoice) { renderColBox(); return; }
   colStatus.busy = true; renderColBox();
   try {
-    const row = await addToColl(itemFromCard(currentPrint, currentFinish), pendingQty, true);
+    const row = await addToColl(itemFromCard(currentPrint, currentFinish, currentTyped), pendingQty, true);
     lookupAdded = row.id; lookupQty = row.quantity; colStatus.row = row;
     toast(`${row.name} adicionada à coleção`);
   } catch (e) { colStatus.err = e.message; }
@@ -590,7 +605,7 @@ function renderColBox() {
     box.innerHTML = `<span class="muted">Fora da coleção.</span><span style="display:flex;gap:6px;align-items:center">Tenho <input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"> unid.</span><button class="ghost" id="cbAdd">Adicionar</button>`;
     $('#addQty').addEventListener('change', e => { pendingQty = Math.max(1, Math.floor(Number(e.target.value)) || 1); e.target.value = pendingQty; });
     $('#cbAdd').onclick = async () => {
-      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish), pendingQty, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
+      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish, currentTyped), pendingQty, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
       catch (e) { toast('Erro: ' + e.message); }
     };
   }
@@ -655,6 +670,7 @@ function renderPrint() {
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
       <h2>${esc(c.name)}${rlHtml(c.reserved)}</h2>
+      ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span>${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)}</b></span>
@@ -801,7 +817,7 @@ $('#go').onclick = async () => {
         let n = 0;
         for (const { it, card } of results) {
           const fin = it.foil ? ((card.finishes || []).includes('foil') ? 'foil' : (card.finishes || ['foil'])[0]) : defaultFinish(card);
-          await addToColl(itemFromCard(card, fin), it.qty, false);
+          await addToColl(itemFromCard(card, fin, foreignTyped(it.name, card.name)), it.qty, false);
           snapshot(card).catch(() => {});
           $('#lStatus').textContent = `salvando na coleção ${++n}/${results.length}…`;
         }
@@ -899,7 +915,8 @@ function renderColl() {
       <tr><th>Qtd</th><th>Carta</th><th>Raridade</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}</td>
+        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
+          <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
         <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
         <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
@@ -923,12 +940,22 @@ function renderColl() {
     inp.addEventListener('change', commit);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
   });
+  out.querySelectorAll('input[data-tn]').forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { const r = coll.find(x => x.id === inp.dataset.tn); inp.value = r?.typed_name || ''; inp.blur(); } });
+    inp.addEventListener('change', async () => {
+      const r = coll.find(x => x.id === inp.dataset.tn); if (!r) return;
+      const v = inp.value.trim() || null;
+      const { data, error } = await db.from('collection_items').update({ typed_name: v, updated_at: new Date().toISOString() }).eq('id', r.id).select().single();
+      if (error) { toast('Erro: ' + error.message); inp.value = r.typed_name || ''; return; }
+      Object.assign(r, data); toast(v ? `Nome salvo: ${v}` : 'Nome removido');
+    });
+  });
   out.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'nome_digitado', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }

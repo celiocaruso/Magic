@@ -6,6 +6,7 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - Busca carta por nome (inglês ou português), escolhe edição e acabamento (normal/foil/etched).
 - Mostra preço TCGplayer (USD) e Cardmarket (EUR), convertidos para R$ pelo câmbio comercial (AwesomeAPI; reserva: BCE/Frankfurter).
 - **Toda carta avaliada entra na coleção** do usuário, a menos que a opção "Carta da coleção" esteja desmarcada.
+- Guarda o nome digitado (ex.: em português) além do nome em inglês, editável na coleção.
 - Guarda a raridade (Comum, Incomum, Rara, Mítica…) e se a carta está na Reserved List; filtro por raridade na coleção.
 - Avalia listas coladas (formato de exportação de decks) e soma à coleção.
 - Aba "Minha coleção": valor total, ajuste de quantidade, atualização de preços, exportação CSV.
