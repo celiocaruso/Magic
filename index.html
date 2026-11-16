@@ -72,6 +72,7 @@
   .thumb{width:34px;border-radius:3px;vertical-align:middle;margin-right:8px}
   .hint{color:var(--muted);font-size:13px;margin:0 0 10px;line-height:1.5}
   code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+  input.qty{width:58px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:14px;text-align:center;font-weight:600}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -534,11 +535,18 @@ function renderColBox() {
   if (r) {
     box.className = 'colbox in';
     box.innerHTML = `<span class="st">✓ Na coleção</span>
-      <span style="display:flex;gap:6px;align-items:center"><button class="mini" data-d="-1">−</button><b>${r.quantity}</b><button class="mini" data-d="1">+</button> unid.</span>
+      <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="cbQty" type="number" min="0" step="1" value="${r.quantity}"><button class="mini" data-d="1">+</button> unid.</span>
       <button class="link" id="cbRm">remover da coleção</button>`;
     box.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
       try { await setQty(r.id, r.quantity + +b.dataset.d); if (r.quantity + +b.dataset.d < 1) { colStatus.row = null; lookupAdded = null; } renderColBox(); renderCollBadge(); }
       catch (e) { toast('Erro: ' + e.message); }
+    });
+    $('#cbQty').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+    $('#cbQty').addEventListener('change', async e => {
+      const q = Math.max(0, Math.floor(Number(e.target.value)));
+      if (isNaN(q) || e.target.value === '') { e.target.value = r.quantity; return; }
+      try { await setQty(r.id, q); if (q < 1) { colStatus.row = null; lookupAdded = null; } else lookupAdded = null; renderColBox(); renderCollBadge(); }
+      catch (err) { toast('Erro: ' + err.message); e.target.value = r.quantity; }
     });
     $('#cbRm').onclick = async () => {
       try { await removeRow(r.id); colStatus.row = null; lookupAdded = null; renderColBox(); renderCollBadge(); toast('Removida da coleção'); }
@@ -852,7 +860,7 @@ function renderColl() {
     <table>
       <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
       ${rows.map(({ r, u, ub, tb }) => `<tr>
-        <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <b>${r.quantity}</b> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
+        <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
         <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}</td>
         <td class="muted">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</td>
         <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
@@ -862,6 +870,18 @@ function renderColl() {
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
     try { await setQty(r.id, r.quantity + +b.dataset.d); renderColl(); } catch (e) { toast('Erro: ' + e.message); }
+  });
+  out.querySelectorAll('input[data-q]').forEach(inp => {
+    const commit = async () => {
+      const r = coll.find(x => x.id === inp.dataset.q); if (!r) return;
+      const q = Math.max(0, Math.floor(Number(inp.value)));
+      if (isNaN(q) || inp.value === '') { inp.value = r.quantity; return; }
+      if (q === r.quantity) return;
+      try { await setQty(r.id, q); renderColl(); toast(q ? `${r.name}: ${q} unid.` : `${r.name} removida`); saveValueToday().then(loadValueHistory).catch(() => {}); }
+      catch (e) { toast('Erro: ' + e.message); inp.value = r.quantity; }
+    };
+    inp.addEventListener('change', commit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
   });
   out.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
