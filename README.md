@@ -1,4 +1,4 @@
-# Magia — avaliador de cartas de Magic: The Gathering
+# Magic — avaliador de cartas de Magic: The Gathering
 
 App web (uma página, sem build) para avaliar o **preço de mercado** de cartas de MTG e manter a **coleção** do usuário.
 
