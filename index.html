@@ -73,6 +73,9 @@
   .hint{color:var(--muted);font-size:13px;margin:0 0 10px;line-height:1.5}
   code{background:var(--panel2);padding:1px 5px;border-radius:4px}
   input.qty{width:58px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:14px;text-align:center;font-weight:600}
+  .rar{display:inline-block;font-size:12px;font-weight:600;padding:2px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
+  .rar.common{color:#b9bcc4}.rar.uncommon{color:#9fc3d6}.rar.rare{color:#e0c060}.rar.mythic{color:#f07a3a}.rar.special{color:#c58cf0}.rar.bonus{color:#c58cf0}
+  .rl{display:inline-block;background:#b3261e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;vertical-align:middle;margin-left:8px;white-space:nowrap}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -287,6 +290,9 @@ const num = v => v == null || v === '' ? null : parseFloat(v);
 const toBRL = (v, cur) => (v == null || !rates[cur]) ? null : v * rates[cur];
 const img = c => (c.image_uris || (c.card_faces && c.card_faces[0].image_uris) || {});
 const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const RARITY_PT = { common: 'Comum', uncommon: 'Incomum', rare: 'Rara', mythic: 'Mítica', special: 'Especial', bonus: 'Bônus' };
+const rarityHtml = (rar, set) => rar ? `<span class="rar ${esc(rar)}" title="Raridade">${RARITY_PT[rar] || esc(rar)}${set ? ' (' + esc(String(set).toUpperCase()) + ')' : ''}</span>` : '';
+const rlHtml = res => res ? '<span class="rl" title="Reserved List: a Wizards se comprometeu a nunca reimprimir esta carta">Reserved List</span>' : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
   const p = card.prices || {};
@@ -306,6 +312,7 @@ function itemFromCard(card, finish) {
     set_code: card.set, set_name: card.set_name, collector_number: card.collector_number,
     finish, image_url: img(card).small || img(card).normal || null,
     price_usd: pr.usd, price_eur: pr.eur,
+    rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
   };
 }
 
@@ -604,7 +611,7 @@ function printCardHtml(x, i) {
     ${owned ? '<span class="tagc">na coleção</span>' : ''}
     <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
     <div class="pn">${esc(x.set_name)}</div>
-    <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)}${tags ? ' · ' + esc(tags) : ''}</div>
+    <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
     <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') : '<span class="muted">sem preço</span>'}</div>
   </button>`;
 }
@@ -637,8 +644,8 @@ function renderPrint() {
   <div class="card">
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
-      <h2>${esc(c.name)}</h2>
-      <div class="sub">${esc(c.type_line || '')} · ${esc(c.rarity)}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</div>
+      <h2>${esc(c.name)}${rlHtml(c.reserved)}</h2>
+      <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span>${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
@@ -842,7 +849,7 @@ $('#csv').onclick = () => {
 };
 
 /* ================= Minha coleção ================= */
-let collBasis = 'usd';
+let collBasis = 'usd', collRarity = '';
 function renderCollBadge() {
   $('#collCount').textContent = coll ? coll.reduce((s, r) => s + r.quantity, 0) : '–';
 }
@@ -855,7 +862,8 @@ function renderColl() {
   if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
   let total = 0, totalOrig = 0, count = 0, noPrice = 0;
-  const rows = coll.map(r => {
+  const view = coll.filter(r => !collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity));
+  const rows = view.map(r => {
     const u = num(cur === 'usd' ? r.price_usd : r.price_eur), ub = toBRL(u, cur), tb = ub == null ? null : ub * r.quantity;
     if (tb != null) { total += tb; totalOrig += u * r.quantity; } else noPrice++;
     count += r.quantity;
@@ -867,23 +875,28 @@ function renderColl() {
       <label class="muted">Base de preço:
         <select id="collBasis"><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
       </label>
+      <label class="muted">Raridade:
+        <select id="collRar"><option value="">Todas</option>${['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => coll.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('')}${coll.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : ''}</select>
+      </label>
       <button class="ghost" id="collRefresh">Atualizar preços</button>
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${count} cartas · ${coll.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="total">${fBRL(total)} <small>${collRarity ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
     <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
-      <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
+      <tr><th>Qtd</th><th>Carta</th><th>Raridade</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}</td>
-        <td class="muted">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</td>
+        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}</td>
+        <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
+        <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
         <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
         <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
   $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
+  $('#collRar').onchange = e => { collRarity = e.target.value; renderColl(); };
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
     try { await setQty(r.id, r.quantity + +b.dataset.d); renderColl(); } catch (e) { toast('Erro: ' + e.message); }
@@ -904,8 +917,8 @@ function renderColl() {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
@@ -942,7 +955,7 @@ async function refreshPrices() {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
-        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString() })
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
