@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Magia · Avaliador de cartas MTG</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e8e9ec; --muted:#9aa0ab; --accent:#e0a84b; --ok:#5fbf7f; --bad:#e06464;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+  a{color:inherit}
+  header{padding:16px 24px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+  h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
+  h1 span{color:var(--accent)}
+  .hdr-right{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .rates{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap}
+  .rates input{width:74px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 7px;font-size:13px}
+  .user{font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
+  .tabs{display:flex;gap:4px;padding:14px 24px 0;flex-wrap:wrap}
+  .tab{background:none;border:1px solid transparent;border-bottom:none;color:var(--muted);padding:9px 16px;border-radius:8px 8px 0 0;cursor:pointer;font-size:14px}
+  .tab.active{background:var(--panel);border-color:var(--line);color:var(--txt)}
+  .tab .badge{background:var(--panel2);border-radius:10px;padding:1px 7px;font-size:12px;margin-left:4px}
+  main{padding:0 24px 40px}
+  .pane{display:none;background:var(--panel);border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:20px}
+  .pane.active{display:block}
+  .searchrow{display:flex;gap:10px;max-width:820px;align-items:center;flex-wrap:wrap}
+  .search{position:relative;flex:1;min-width:240px}
+  .search input{width:100%;padding:12px 14px;font-size:16px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt)}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  .sugg{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;max-height:320px;overflow:auto;z-index:10;display:none}
+  .sugg div{padding:9px 14px;cursor:pointer}
+  .sugg div:hover,.sugg div.hl{background:#2b303b}
+  .chk{display:flex;gap:7px;align-items:center;font-size:14px;cursor:pointer;user-select:none}
+  .chk input{width:17px;height:17px;accent-color:var(--accent)}
+  .card{display:grid;grid-template-columns:260px 1fr;gap:24px;margin-top:22px}
+  @media (max-width:720px){.card{grid-template-columns:1fr}}
+  .card img{width:100%;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  .card h2{margin:0 0 4px;font-size:22px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+  select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-size:14px;max-width:100%}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:middle}
+  th{color:var(--muted);font-weight:500;font-size:13px}
+  td.num,th.num{text-align:right}
+  .brl{color:var(--accent);font-weight:600}
+  .muted{color:var(--muted)}
+  .range{margin-top:16px;padding:12px 14px;background:var(--panel2);border-radius:8px;font-size:14px}
+  .colbox{margin-top:14px;padding:10px 14px;border-radius:8px;font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border:1px solid var(--line)}
+  .colbox.in{border-color:var(--ok)}
+  .colbox .st{font-weight:600}
+  .colbox.in .st{color:var(--ok)}
+  .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+  .links a{text-decoration:none;border:1px solid var(--line);padding:6px 11px;border-radius:6px;font-size:13px}
+  .links a:hover{border-color:var(--accent)}
+  textarea{width:100%;min-height:180px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  button{font-family:inherit}
+  button.primary{background:var(--accent);color:#1a1205;border:none;padding:11px 20px;border-radius:8px;font-weight:650;cursor:pointer;font-size:14px}
+  button.ghost{background:none;border:1px solid var(--line);color:var(--txt);padding:8px 13px;border-radius:8px;cursor:pointer;font-size:13px}
+  button.ghost:hover{border-color:var(--accent)}
+  button.mini{background:var(--panel2);border:1px solid var(--line);color:var(--txt);width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1}
+  button.link{background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;font-size:13px;padding:0}
+  button:disabled{opacity:.5;cursor:default}
+  .total{font-size:22px;font-weight:700;margin-top:18px}
+  .total small{font-size:13px;color:var(--muted);font-weight:400;margin-left:8px}
+  .warn{color:var(--bad);font-size:13px;margin-top:10px}
+  .status{color:var(--muted);font-size:13px}
+  .thumb{width:34px;border-radius:3px;vertical-align:middle;margin-right:8px}
+  .hint{color:var(--muted);font-size:13px;margin:0 0 10px;line-height:1.5}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px}
+  footer{color:var(--muted);font-size:12px;padding:0 24px 24px;line-height:1.5}
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal.open{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;width:min(380px,92vw)}
+  .modal h3{margin:0 0 6px}
+  .modal input{width:100%;margin-top:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:15px}
+  .modal .row{justify-content:space-between}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Magia · <span>avaliador MTG</span></h1>
+  <div class="hdr-right">
+    <div class="rates">
+      <label>1 USD = R$ <input id="rUSD" type="number" step="0.01"></label>
+      <label>1 EUR = R$ <input id="rEUR" type="number" step="0.01"></label>
+      <span id="rStatus">carregando câmbio…</span>
+    </div>
+    <div class="user" id="userBox"></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" data-tab="single">Carta</button>
+  <button class="tab" data-tab="list">Lista</button>
+  <button class="tab" data-tab="coll">Minha coleção <span class="badge" id="collCount">–</span></button>
+</div>
+
+<main>
+  <!-- CARTA -->
+  <section class="pane active" id="pane-single">
+    <div class="searchrow">
+      <div class="search">
+        <input id="q" placeholder="Nome da carta, em inglês ou português (ex: Sol Ring)" autocomplete="off">
+        <div class="sugg" id="sugg"></div>
+      </div>
+      <button class="primary" id="btnQ">Avaliar</button>
+      <label class="chk" title="Toda carta avaliada entra na sua coleção. Desmarque para só consultar.">
+        <input type="checkbox" id="autoAdd" checked> Carta da coleção
+      </label>
+    </div>
+    <div id="cardOut"></div>
+  </section>
+
+  <!-- LISTA -->
+  <section class="pane" id="pane-list">
+    <p class="hint">Uma carta por linha. Formatos aceitos: <code>4 Lightning Bolt</code>, <code>1x Sol Ring (C21) 263</code>, <code>2 Counterspell [MH2] *F*</code> (foil). Sem edição, usa a impressão padrão do Scryfall.</p>
+    <textarea id="list" placeholder="4 Lightning Bolt&#10;1 Sol Ring (C21)&#10;1 Ragavan, Nimble Pilferer *F*"></textarea>
+    <div class="row">
+      <label class="muted">Base de preço:
+        <select id="basis">
+          <option value="usd">USD · TCGplayer (EUA)</option>
+          <option value="eur">EUR · Cardmarket (Europa)</option>
+        </select>
+      </label>
+      <label class="chk"><input type="checkbox" id="listAdd" checked> Adicionar à coleção</label>
+      <button class="primary" id="go">Avaliar lista</button>
+      <button class="ghost" id="csv" disabled>Exportar CSV</button>
+      <span class="status" id="lStatus"></span>
+    </div>
+    <div id="listOut"></div>
+  </section>
+
+  <!-- COLEÇÃO -->
+  <section class="pane" id="pane-coll">
+    <div id="collOut"></div>
+  </section>
+</main>
+
+<div class="modal" id="authModal">
+  <div class="box">
+    <h3 id="authTitle">Entrar</h3>
+    <p class="hint" id="authHint">Entre para guardar sua coleção.</p>
+    <input id="authEmail" type="email" placeholder="seu e-mail" autocomplete="email">
+    <input id="authPass" type="password" placeholder="senha (mín. 6 caracteres)" autocomplete="current-password">
+    <div class="warn" id="authErr"></div>
+    <div class="row">
+      <button class="link" id="authSwitch">Não tenho conta — criar</button>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" id="authCancel">Cancelar</button>
+        <button class="primary" id="authGo">Entrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<footer>
+  Dados de cartas e preços: <a href="https://scryfall.com">Scryfall</a> (preços de TCGplayer e Cardmarket, atualizados 1x/dia). Câmbio: AwesomeAPI (cotação comercial, Brasil), com reserva no BCE via Frankfurter. Valores em R$ são conversão direta do preço internacional, não o preço do mercado brasileiro.
+  Conteúdo de Magic: The Gathering © Wizards of the Coast. Projeto de fã, sem vínculo com a Wizards.
+</footer>
+
+<script>
+/* ================= Configuração ================= */
+// Chave publicável: pode ficar no código. A segurança vem das regras RLS no banco.
+const SUPABASE_URL = 'https://hdwgehvkaqucgdmswrpp.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_tYD9RzDln2NvJYD1UOKApA_XHPNZysY';
+const db = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+const API = 'https://api.scryfall.com';
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let user = null;
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ================= Scryfall (ritmo ~100ms) ================= */
+let nextSlot = 0;
+async function sf(path, opts = {}) {
+  const now = Date.now();
+  const wait = Math.max(0, nextSlot - now);
+  nextSlot = Math.max(now, nextSlot) + 110;
+  if (wait) await sleep(wait);
+  const url = path.startsWith('http') ? path : API + path;
+  const r = await fetch(url, { ...opts, headers: { 'Accept': 'application/json', ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.details || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+const netMsg = e => (e instanceof TypeError || /fetch/i.test(e.message))
+  ? 'sem conexão com a internet nesta página. Abra pelo navegador (a pré-visualização do app bloqueia chamadas externas).'
+  : e.message;
+
+async function searchForeign(v) {
+  try {
+    const j = await sf('/cards/search?unique=prints&q=' + encodeURIComponent('lang:any ' + v));
+    const seen = new Map();
+    for (const c of j.data) if (!seen.has(c.name))
+      seen.set(c.name, { name: c.name, label: (c.printed_name && c.printed_name !== c.name ? c.printed_name + ' → ' : '') + c.name });
+    return [...seen.values()].slice(0, 12);
+  } catch (e) { if (e.status === 404) return []; throw e; }
+}
+
+/* ================= Câmbio ================= */
+const rates = { usd: null, eur: null };
+async function loadRates() {
+  const show = (src, when) => {
+    $('#rUSD').value = rates.usd.toFixed(2); $('#rEUR').value = rates.eur.toFixed(2);
+    $('#rStatus').textContent = src + (when ? ' · ' + when : '');
+  };
+  try {
+    const r = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    rates.usd = parseFloat(j.USDBRL.bid); rates.eur = parseFloat(j.EURBRL.bid);
+    const d = new Date(j.USDBRL.create_date.replace(' ', 'T'));
+    show('comercial · AwesomeAPI', isNaN(d) ? '' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
+  } catch {
+    try {
+      const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=BRL,EUR');
+      const j = await r.json();
+      rates.usd = j.rates.BRL; rates.eur = j.rates.BRL / j.rates.EUR;
+      show('BCE · Frankfurter', j.date.split('-').reverse().join('/'));
+    } catch {
+      $('#rStatus').innerHTML = '<span style="color:var(--bad)">sem câmbio — preencha à mão</span>';
+    }
+  }
+  rerenderAll();
+}
+['#rUSD', '#rEUR'].forEach(id => $(id).addEventListener('input', () => {
+  rates.usd = parseFloat($('#rUSD').value) || null;
+  rates.eur = parseFloat($('#rEUR').value) || null;
+  $('#rStatus').textContent = 'câmbio manual';
+  rerenderAll();
+}));
+function rerenderAll() { if (currentPrint) renderPrint(); if (lastList) renderList(); if (coll) renderColl(); }
+
+/* ================= Formatação ================= */
+const fUSD = v => v == null ? '—' : 'US$ ' + Number(v).toFixed(2);
+const fEUR = v => v == null ? '—' : '€ ' + Number(v).toFixed(2);
+const fBRL = v => v == null || isNaN(v) ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const num = v => v == null || v === '' ? null : parseFloat(v);
+const toBRL = (v, cur) => (v == null || !rates[cur]) ? null : v * rates[cur];
+const img = c => (c.image_uris || (c.card_faces && c.card_faces[0].image_uris) || {});
+const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
+function priceFor(card, finish) {
+  const p = card.prices || {};
+  if (finish === 'foil') return { usd: num(p.usd_foil), eur: num(p.eur_foil) };
+  if (finish === 'etched') return { usd: num(p.usd_etched), eur: num(p.eur_etched) };
+  return { usd: num(p.usd), eur: num(p.eur) };
+}
+function defaultFinish(card) {
+  const f = card.finishes || ['nonfoil'];
+  if (f.includes('nonfoil')) return 'nonfoil';
+  return f[0];
+}
+function itemFromCard(card, finish) {
+  const pr = priceFor(card, finish);
+  return {
+    scryfall_id: card.id, oracle_id: card.oracle_id, name: card.name,
+    set_code: card.set, set_name: card.set_name, collector_number: card.collector_number,
+    finish, image_url: img(card).small || img(card).normal || null,
+    price_usd: pr.usd, price_eur: pr.eur,
+  };
+}
+
+/* ================= Autenticação ================= */
+let authMode = 'in';
+function renderUser() {
+  const b = $('#userBox');
+  if (!db) { b.innerHTML = '<span class="warn" style="margin:0">Supabase indisponível</span>'; return; }
+  if (user) {
+    b.innerHTML = `<span>${esc(user.email)}</span><button class="link" id="btnOut">sair</button>`;
+    $('#btnOut').onclick = async () => { await db.auth.signOut(); };
+  } else {
+    b.innerHTML = `<button class="ghost" id="btnIn">Entrar</button>`;
+    $('#btnIn').onclick = openAuth;
+  }
+}
+function openAuth() {
+  $('#authErr').textContent = ''; $('#authModal').classList.add('open'); $('#authEmail').focus();
+}
+function setAuthMode(m) {
+  authMode = m;
+  $('#authTitle').textContent = m === 'in' ? 'Entrar' : 'Criar conta';
+  $('#authGo').textContent = m === 'in' ? 'Entrar' : 'Criar conta';
+  $('#authSwitch').textContent = m === 'in' ? 'Não tenho conta — criar' : 'Já tenho conta — entrar';
+  $('#authPass').autocomplete = m === 'in' ? 'current-password' : 'new-password';
+}
+$('#authSwitch').onclick = () => setAuthMode(authMode === 'in' ? 'up' : 'in');
+$('#authCancel').onclick = () => $('#authModal').classList.remove('open');
+$('#authPass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#authGo').click(); });
+$('#authGo').onclick = async () => {
+  const email = $('#authEmail').value.trim(), password = $('#authPass').value;
+  $('#authErr').textContent = '';
+  if (!email || password.length < 6) { $('#authErr').textContent = 'Informe e-mail e senha com 6+ caracteres.'; return; }
+  $('#authGo').disabled = true;
+  try {
+    if (authMode === 'in') {
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      $('#authModal').classList.remove('open');
+    } else {
+      const { data, error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (error) throw error;
+      if (data.session) { $('#authModal').classList.remove('open'); toast('Conta criada!'); }
+      else { $('#authErr').style.color = 'var(--ok)'; $('#authErr').textContent = 'Conta criada. Confirme pelo link que enviamos ao seu e-mail e depois entre.'; setAuthMode('in'); }
+    }
+  } catch (e) {
+    $('#authErr').style.color = '';
+    $('#authErr').textContent = /invalid login/i.test(e.message) ? 'E-mail ou senha incorretos.' : /not confirmed/i.test(e.message) ? 'Confirme seu e-mail pelo link que enviamos antes de entrar.' : e.message;
+  }
+  $('#authGo').disabled = false;
+};
+if (db) {
+  db.auth.onAuthStateChange((_ev, session) => {
+    const was = user?.id;
+    user = session?.user || null;
+    renderUser();
+    if (user?.id !== was) { coll = null; loadColl(); if (currentPrint) syncCurrent(); }
+  });
+}
+
+/* ================= Banco: coleção ================= */
+let coll = null; // array de linhas
+async function loadColl() {
+  if (!db || !user) { coll = null; renderColl(); return; }
+  const { data, error } = await db.from('collection_items').select('*').order('name');
+  if (error) { $('#collOut').innerHTML = `<p class="warn">Erro ao carregar coleção: ${esc(error.message)}</p>`; return; }
+  coll = data; renderColl();
+}
+async function addToColl(item, qty = 1, onlyIfNew = false) {
+  const { data, error } = await db.rpc('add_to_collection', { item, qty, only_if_new: onlyIfNew });
+  if (error) throw error;
+  const i = coll ? coll.findIndex(r => r.id === data.id) : -1;
+  if (coll) { if (i >= 0) coll[i] = data; else coll.push(data); coll.sort((a, b) => a.name.localeCompare(b.name)); }
+  return data;
+}
+async function removeRow(id) {
+  const { error } = await db.from('collection_items').delete().eq('id', id);
+  if (error) throw error;
+  if (coll) coll = coll.filter(r => r.id !== id);
+}
+async function setQty(id, qty) {
+  if (qty < 1) return removeRow(id);
+  const { data, error } = await db.from('collection_items').update({ quantity: qty, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  if (error) throw error;
+  if (coll) { const i = coll.findIndex(r => r.id === id); if (i >= 0) coll[i] = data; }
+}
+function findRow(scryId, finish) { return coll ? coll.find(r => r.scryfall_id === scryId && r.finish === finish) : null; }
+async function snapshot(card) {
+  if (!db || !user) return;
+  const p = card.prices || {};
+  await db.from('price_snapshots').upsert({
+    scryfall_id: card.id, usd: num(p.usd), usd_foil: num(p.usd_foil), usd_etched: num(p.usd_etched),
+    eur: num(p.eur), eur_foil: num(p.eur_foil), usd_brl: rates.usd, eur_brl: rates.eur,
+  }, { onConflict: 'scryfall_id,captured_on', ignoreDuplicates: true });
+}
+
+/* ================= Abas ================= */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + t.dataset.tab));
+  if (t.dataset.tab === 'coll') renderColl();
+});
+
+/* ================= Autocomplete ================= */
+let acTimer, acItems = [], acIdx = -1;
+$('#q').addEventListener('input', e => {
+  clearTimeout(acTimer);
+  const v = e.target.value.trim();
+  if (v.length < 2) { hideSugg(); return; }
+  acTimer = setTimeout(async () => {
+    try {
+      const j = await sf('/cards/autocomplete?q=' + encodeURIComponent(v));
+      acItems = j.data.slice(0, 12).map(n => ({ name: n, label: n }));
+      if (!acItems.length && v.length >= 3) acItems = await searchForeign(v);
+      acIdx = -1; showSugg();
+    } catch (e) { hideSugg(); $('#cardOut').innerHTML = `<p class="warn">${esc(netMsg(e))}</p>`; }
+  }, 300);
+});
+$('#q').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { acIdx = Math.min(acIdx + 1, acItems.length - 1); showSugg(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { acIdx = Math.max(acIdx - 1, 0); showSugg(); e.preventDefault(); }
+  else if (e.key === 'Enter') { $('#btnQ').click(); }
+  else if (e.key === 'Escape') hideSugg();
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search')) hideSugg(); });
+$('#btnQ').onclick = () => {
+  const v = $('#q').value.trim();
+  if (!v) { $('#q').focus(); return; }
+  if (acIdx >= 0 && acItems[acIdx]) return pick(acItems[acIdx].name);
+  const exact = acItems.find(i => i.name.toLowerCase() === v.toLowerCase());
+  pick(exact ? exact.name : (acItems[0] && $('#sugg').style.display === 'block' ? acItems[0].name : v));
+};
+function showSugg() {
+  const box = $('#sugg');
+  if (!acItems.length) { hideSugg(); return; }
+  box.innerHTML = acItems.map((n, i) => `<div class="${i === acIdx ? 'hl' : ''}" data-n="${esc(n.name)}">${esc(n.label)}</div>`).join('');
+  box.style.display = 'block';
+  box.querySelectorAll('div').forEach(d => d.onclick = () => pick(d.dataset.n));
+}
+function hideSugg() { $('#sugg').style.display = 'none'; }
+
+/* ================= Carta única ================= */
+let prints = [], currentPrint = null, currentFinish = 'nonfoil';
+let lookupAdded = null; // linha criada por ESTA consulta (pode ser desfeita/trocada)
+let colStatus = { row: null, busy: false, err: '' };
+
+async function pick(name) {
+  hideSugg();
+  $('#q').value = name;
+  lookupAdded = null;
+  $('#cardOut').innerHTML = '<p class="status" style="margin-top:20px">buscando edições…</p>';
+  try {
+    prints = [];
+    try { await sf('/cards/named?exact=' + encodeURIComponent(name)); }
+    catch (e) {
+      if (e.status !== 404) throw e;
+      const f = await searchForeign(name);
+      if (!f.length) throw new Error('nome não reconhecido — tente o nome em inglês (a LigaMagic mostra abaixo do nome em português)');
+      name = f[0].name; $('#q').value = name;
+    }
+    let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent('!"' + name + '" game:paper'));
+    prints.push(...page.data);
+    let guard = 0;
+    while (page.has_more && guard++ < 5) { page = await sf(page.next_page); prints.push(...page.data); }
+    currentPrint = prints.find(p => p.prices.usd || p.prices.eur) || prints[0];
+    currentFinish = defaultFinish(currentPrint);
+    renderPrint();
+    snapshot(currentPrint).catch(() => {});
+    syncCurrent();
+  } catch (e) {
+    currentPrint = null;
+    $('#cardOut').innerHTML = `<p class="warn">Não encontrei "${esc(name)}": ${esc(netMsg(e))}</p>`;
+  }
+}
+
+// Garante que a impressão/acabamento atual esteja na coleção (se a opção estiver marcada)
+async function syncCurrent() {
+  if (!currentPrint) return;
+  colStatus = { row: null, busy: false, err: '' };
+  if (!db || !user) { renderColBox(); return; }
+  if (!coll) await loadColl();
+  const existing = findRow(currentPrint.id, currentFinish);
+  if (existing) { colStatus.row = existing; renderColBox(); return; }
+  if (!$('#autoAdd').checked) { renderColBox(); return; }
+  colStatus.busy = true; renderColBox();
+  try {
+    const row = await addToColl(itemFromCard(currentPrint, currentFinish), 1, true);
+    lookupAdded = row.id; colStatus.row = row;
+    toast(`${row.name} adicionada à coleção`);
+  } catch (e) { colStatus.err = e.message; }
+  colStatus.busy = false; renderColBox(); renderCollBadge();
+}
+
+// Ao trocar edição/acabamento: desfaz o que ESTA consulta adicionou e adiciona a nova escolha
+async function changeSelection(print, finish) {
+  if (lookupAdded && user) {
+    const r = coll && coll.find(x => x.id === lookupAdded);
+    if (r && r.quantity === 1) { try { await removeRow(lookupAdded); } catch {} }
+    lookupAdded = null;
+  }
+  currentPrint = print; currentFinish = finish;
+  renderPrint();
+  snapshot(print).catch(() => {});
+  syncCurrent();
+}
+
+function renderColBox() {
+  const box = $('#colBox'); if (!box) return;
+  if (!db) { box.className = 'colbox'; box.innerHTML = '<span class="muted">Banco indisponível.</span>'; return; }
+  if (!user) {
+    box.className = 'colbox';
+    box.innerHTML = `<span class="muted">Entre para guardar esta carta na sua coleção.</span><button class="ghost" id="cbIn">Entrar</button>`;
+    $('#cbIn').onclick = openAuth; return;
+  }
+  if (colStatus.busy) { box.className = 'colbox'; box.innerHTML = '<span class="muted">salvando na coleção…</span>'; return; }
+  if (colStatus.err) { box.className = 'colbox'; box.innerHTML = `<span class="warn" style="margin:0">Não salvou: ${esc(colStatus.err)}</span>`; return; }
+  const r = colStatus.row && coll && coll.find(x => x.id === colStatus.row.id);
+  if (r) {
+    box.className = 'colbox in';
+    box.innerHTML = `<span class="st">✓ Na coleção</span>
+      <span style="display:flex;gap:6px;align-items:center"><button class="mini" data-d="-1">−</button><b>${r.quantity}</b><button class="mini" data-d="1">+</button> unid.</span>
+      <button class="link" id="cbRm">remover da coleção</button>`;
+    box.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
+      try { await setQty(r.id, r.quantity + +b.dataset.d); if (r.quantity + +b.dataset.d < 1) { colStatus.row = null; lookupAdded = null; } renderColBox(); renderCollBadge(); }
+      catch (e) { toast('Erro: ' + e.message); }
+    });
+    $('#cbRm').onclick = async () => {
+      try { await removeRow(r.id); colStatus.row = null; lookupAdded = null; renderColBox(); renderCollBadge(); toast('Removida da coleção'); }
+      catch (e) { toast('Erro: ' + e.message); }
+    };
+  } else {
+    box.className = 'colbox';
+    box.innerHTML = `<span class="muted">Fora da coleção.</span><button class="ghost" id="cbAdd">Adicionar</button>`;
+    $('#cbAdd').onclick = async () => {
+      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish), 1, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
+      catch (e) { toast('Erro: ' + e.message); }
+    };
+  }
+}
+
+function renderPrint() {
+  const c = currentPrint; if (!c) return;
+  const p = c.prices;
+  const rows = [
+    ['nonfoil', num(p.usd), num(p.eur)],
+    ['foil', num(p.usd_foil), num(p.eur_foil)],
+    ['etched', num(p.usd_etched), num(p.eur_etched)],
+  ].filter(r => r[1] != null || r[2] != null || (c.finishes || []).includes(r[0]));
+
+  const allUsd = prints.map(x => ({ v: num(x.prices.usd), x })).filter(o => o.v != null);
+  let rangeHtml = '';
+  if (allUsd.length > 1) {
+    const min = allUsd.reduce((a, b) => b.v < a.v ? b : a);
+    const max = allUsd.reduce((a, b) => b.v > a.v ? b : a);
+    rangeHtml = `<div class="range"><b>Entre ${prints.length} edições (normal, USD):</b><br>
+      mais barata <span class="brl">${fBRL(toBRL(min.v, 'usd'))}</span> <span class="muted">(${fUSD(min.v)} · ${esc(min.x.set_name)})</span><br>
+      mais cara <span class="brl">${fBRL(toBRL(max.v, 'usd'))}</span> <span class="muted">(${fUSD(max.v)} · ${esc(max.x.set_name)})</span></div>`;
+  }
+  const opts = prints.map((x, i) => {
+    const tag = x.prices.usd ? ' · ' + fUSD(x.prices.usd) : (x.prices.usd_foil ? ' · foil ' + fUSD(x.prices.usd_foil) : '');
+    return `<option value="${i}" ${x.id === c.id ? 'selected' : ''}>${esc(x.set_name)} (${x.set.toUpperCase()} #${esc(x.collector_number)}) · ${x.released_at.slice(0, 4)}${tag}</option>`;
+  }).join('');
+  const fins = (c.finishes || ['nonfoil']).map(f => `<option value="${f}" ${f === currentFinish ? 'selected' : ''}>${FINISH_PT[f] || f}</option>`).join('');
+  const pu = c.purchase_uris || {}, ru = c.related_uris || {};
+  const liga = 'https://www.ligamagic.com.br/?view=cards/card&card=' + encodeURIComponent(c.name);
+
+  $('#cardOut').innerHTML = `
+  <div class="card">
+    <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
+    <div>
+      <h2>${esc(c.name)}</h2>
+      <div class="sub">${esc(c.type_line || '')} · ${esc(c.rarity)} · ${prints.length} edição(ões) em papel</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="printSel">${opts}</select>
+        <select id="finSel" title="Acabamento">${fins}</select>
+      </div>
+      ${rows.length ? `<table>
+        <tr><th>Versão</th><th class="num">TCGplayer</th><th class="num">≈ R$</th><th class="num">Cardmarket</th><th class="num">≈ R$</th></tr>
+        ${rows.map(r => `<tr ${r[0] === currentFinish ? 'style="background:var(--panel2)"' : ''}><td>${FINISH_PT[r[0]]}${r[0] === currentFinish ? ' ◂' : ''}</td>
+          <td class="num">${fUSD(r[1])}</td><td class="num brl">${fBRL(toBRL(r[1], 'usd'))}</td>
+          <td class="num">${fEUR(r[2])}</td><td class="num brl">${fBRL(toBRL(r[2], 'eur'))}</td></tr>`).join('')}
+      </table>` : '<p class="warn">Sem preço registrado para esta edição.</p>'}
+      <div class="colbox" id="colBox"></div>
+      ${rangeHtml}
+      <div class="links">
+        <a href="${liga}" target="_blank" rel="noopener" style="border-color:var(--accent);color:var(--accent)">Ver preço Brasil na LigaMagic ↗</a>
+        ${pu.tcgplayer ? `<a href="${pu.tcgplayer}" target="_blank" rel="noopener">TCGplayer</a>` : ''}
+        ${pu.cardmarket ? `<a href="${pu.cardmarket}" target="_blank" rel="noopener">Cardmarket</a>` : ''}
+        ${ru.edhrec ? `<a href="${ru.edhrec}" target="_blank" rel="noopener">EDHREC</a>` : ''}
+        <a href="${c.scryfall_uri}" target="_blank" rel="noopener">Scryfall</a>
+      </div>
+    </div>
+  </div>`;
+  renderColBox();
+  $('#printSel').onchange = e => { const np = prints[+e.target.value]; changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np)); };
+  $('#finSel').onchange = e => changeSelection(currentPrint, e.target.value);
+}
+
+/* ================= Lista ================= */
+function parseLine(line) {
+  let s = line.trim();
+  if (!s || s.startsWith('//') || s.startsWith('#')) return null;
+  if (/^(deck|sideboard|commander|companion|maybeboard)\s*:?$/i.test(s)) return null;
+  let foil = false;
+  if (/\*f\*|\(foil\)|\bfoil\b/i.test(s)) { foil = true; s = s.replace(/\*f\*|\(foil\)|\bfoil\b/ig, '').trim(); }
+  s = s.replace(/\*[a-z]+\*/ig, '').trim();
+  let qty = 1;
+  const mq = s.match(/^(\d+)\s*x?\s+(.*)$/i);
+  if (mq) { qty = parseInt(mq[1]); s = mq[2]; }
+  let set = null, cn = null;
+  const ms = s.match(/^(.*?)\s*[\(\[]([a-z0-9]{2,6})[\)\]]\s*([0-9a-z★\-]+)?\s*$/i);
+  if (ms) { s = ms[1]; set = ms[2].toLowerCase(); cn = ms[3] || null; }
+  return { qty, name: s.trim(), set, cn, foil, raw: line.trim() };
+}
+
+async function fetchCollection(identifiers, onProgress) {
+  const found = [], notFound = [];
+  for (let i = 0; i < identifiers.length; i += 75) {
+    const chunk = identifiers.slice(i, i + 75);
+    onProgress && onProgress(Math.min(i + 75, identifiers.length), identifiers.length);
+    const j = await sf('/cards/collection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifiers: chunk }) });
+    found.push(...j.data); notFound.push(...(j.not_found || []));
+  }
+  return { found, notFound };
+}
+// encontra a carta que corresponde a um identificador
+function matchCard(id, cards) {
+  if (id.id) return cards.find(c => c.id === id.id);
+  if (id.set && id.collector_number) return cards.find(c => c.set === id.set && c.collector_number === id.collector_number);
+  const n = id.name.toLowerCase();
+  const nameOk = c => c.name.toLowerCase() === n || c.name.toLowerCase().split(' // ')[0] === n;
+  return cards.find(c => nameOk(c) && (!id.set || c.set === id.set));
+}
+
+let lastList = null;
+$('#go').onclick = async () => {
+  const items = $('#list').value.split('\n').map(parseLine).filter(Boolean);
+  if (!items.length) { $('#lStatus').textContent = 'cole ao menos uma carta'; return; }
+  $('#go').disabled = true; $('#csv').disabled = true;
+  try {
+    const ids = items.map(it => it.set && it.cn ? { set: it.set, collector_number: it.cn } : it.set ? { name: it.name, set: it.set } : { name: it.name });
+    const { found } = await fetchCollection(ids, (a, b) => $('#lStatus').textContent = `consultando ${a}/${b}…`);
+    const results = [], missing = [];
+    items.forEach((it, i) => { const card = matchCard(ids[i], found); card ? results.push({ it, card }) : missing.push(it.raw); });
+    lastList = { results, missing };
+    renderList();
+    $('#csv').disabled = false;
+    if ($('#listAdd').checked && results.length) {
+      if (!user) { $('#lStatus').innerHTML = 'avaliada. <button class="link" id="lIn">Entre</button> para salvar na coleção.'; $('#lIn').onclick = openAuth; }
+      else {
+        let n = 0;
+        for (const { it, card } of results) {
+          const fin = it.foil ? ((card.finishes || []).includes('foil') ? 'foil' : (card.finishes || ['foil'])[0]) : defaultFinish(card);
+          await addToColl(itemFromCard(card, fin), it.qty, false);
+          snapshot(card).catch(() => {});
+          $('#lStatus').textContent = `salvando na coleção ${++n}/${results.length}…`;
+        }
+        $('#lStatus').textContent = `${n} linha(s) adicionadas à coleção.`;
+        renderCollBadge();
+      }
+    } else $('#lStatus').textContent = '';
+  } catch (e) {
+    $('#lStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`;
+  }
+  $('#go').disabled = false;
+};
+$('#basis').onchange = () => lastList && renderList();
+
+function unitPrice(card, foil, basis) {
+  const p = card.prices;
+  if (basis === 'usd') return num(foil ? (p.usd_foil ?? p.usd_etched) : (p.usd ?? p.usd_foil));
+  return num(foil ? p.eur_foil : (p.eur ?? p.eur_foil));
+}
+function renderList() {
+  const { results, missing } = lastList;
+  const basis = $('#basis').value;
+  let total = 0, totalOrig = 0, noPrice = 0, count = 0;
+  const rows = results.map(({ it, card }) => {
+    const u = unitPrice(card, it.foil, basis), ub = toBRL(u, basis), tb = ub == null ? null : ub * it.qty;
+    if (tb != null) { total += tb; totalOrig += u * it.qty; } else noPrice++;
+    count += it.qty;
+    return { it, card, u, ub, tb };
+  }).sort((a, b) => (b.tb ?? -1) - (a.tb ?? -1));
+  lastList.rows = rows; lastList.basis = basis;
+  const fo = basis === 'usd' ? fUSD : fEUR;
+  $('#listOut').innerHTML = `
+    <div class="total">${fBRL(total)} <small>${count} cartas · ${fo(totalOrig)} na base ${basis.toUpperCase()}</small></div>
+    ${noPrice ? `<div class="warn">${noPrice} linha(s) sem preço nessa base — tente trocar USD/EUR.</div>` : ''}
+    ${missing.length ? `<div class="warn">Não encontradas: ${missing.map(esc).join(' · ')}</div>` : ''}
+    <table>
+      <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th></tr>
+      ${rows.map(r => `<tr><td>${r.it.qty}</td>
+        <td><img class="thumb" src="${img(r.card).small || ''}" alt=""><a href="${r.card.scryfall_uri}" target="_blank" rel="noopener">${esc(r.card.name)}</a>${r.it.foil ? ' <span class="muted">✦ foil</span>' : ''}</td>
+        <td class="muted">${r.card.set.toUpperCase()} #${esc(r.card.collector_number)}</td>
+        <td class="num muted">${fo(r.u)}</td><td class="num">${fBRL(r.ub)}</td><td class="num brl">${fBRL(r.tb)}</td></tr>`).join('')}
+    </table>`;
+}
+function downloadCSV(name, head, lines) {
+  const blob = new Blob(['﻿' + [head.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+const csvq = s => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+$('#csv').onclick = () => {
+  const { rows, basis } = lastList;
+  downloadCSV('avaliacao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
+    ['qtd', 'carta', 'set', 'numero', 'foil', 'unit_' + basis, 'unit_brl', 'total_brl'],
+    rows.map(r => [r.it.qty, csvq(r.card.name), r.card.set.toUpperCase(), r.card.collector_number, r.it.foil ? 'sim' : 'nao',
+      r.u ?? '', r.ub?.toFixed(2) ?? '', r.tb?.toFixed(2) ?? ''].join(';')));
+};
+
+/* ================= Minha coleção ================= */
+let collBasis = 'usd';
+function renderCollBadge() {
+  $('#collCount').textContent = coll ? coll.reduce((s, r) => s + r.quantity, 0) : '–';
+}
+function renderColl() {
+  renderCollBadge();
+  const out = $('#collOut');
+  if (!db) { out.innerHTML = '<p class="warn">Banco indisponível.</p>'; return; }
+  if (!user) { out.innerHTML = '<p class="hint">Entre para ver e guardar sua coleção.</p><button class="primary" id="ccIn">Entrar</button>'; $('#ccIn').onclick = openAuth; return; }
+  if (!coll) { out.innerHTML = '<p class="status">carregando coleção…</p>'; return; }
+  if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
+  const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
+  let total = 0, totalOrig = 0, count = 0, noPrice = 0;
+  const rows = coll.map(r => {
+    const u = num(cur === 'usd' ? r.price_usd : r.price_eur), ub = toBRL(u, cur), tb = ub == null ? null : ub * r.quantity;
+    if (tb != null) { total += tb; totalOrig += u * r.quantity; } else noPrice++;
+    count += r.quantity;
+    return { r, u, ub, tb };
+  }).sort((a, b) => (b.tb ?? -1) - (a.tb ?? -1));
+  const oldest = coll.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
+  out.innerHTML = `
+    <div class="row" style="margin-top:0">
+      <label class="muted">Base de preço:
+        <select id="collBasis"><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
+      </label>
+      <button class="ghost" id="collRefresh">Atualizar preços</button>
+      <button class="ghost" id="collCsv">Exportar CSV</button>
+      <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
+    </div>
+    <div class="total">${fBRL(total)} <small>${count} cartas · ${coll.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
+    <table>
+      <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th><th></th></tr>
+      ${rows.map(({ r, u, ub, tb }) => `<tr>
+        <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <b>${r.quantity}</b> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
+        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}</td>
+        <td class="muted">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</td>
+        <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
+        <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
+    </table>`;
+  $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
+  out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
+    const r = coll.find(x => x.id === b.dataset.id);
+    try { await setQty(r.id, r.quantity + +b.dataset.d); renderColl(); } catch (e) { toast('Erro: ' + e.message); }
+  });
+  out.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
+  });
+  $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
+    ['qtd', 'carta', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+      r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
+  $('#collRefresh').onclick = refreshPrices;
+}
+async function refreshPrices() {
+  const btn = $('#collRefresh'); btn.disabled = true;
+  try {
+    const ids = [...new Set(coll.map(r => r.scryfall_id))].map(id => ({ id }));
+    const { found } = await fetchCollection(ids, (a, b) => $('#collStatus').textContent = `consultando ${a}/${b}…`);
+    const byId = new Map(found.map(c => [c.id, c]));
+    let n = 0;
+    for (const r of coll) {
+      const c = byId.get(r.scryfall_id); if (!c) continue;
+      const pr = priceFor(c, r.finish);
+      const { data, error } = await db.from('collection_items')
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString() })
+        .eq('id', r.id).select().single();
+      if (!error) Object.assign(r, data);
+      $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
+    }
+    for (const c of found) snapshot(c).catch(() => {});
+    renderColl(); toast('Preços atualizados');
+  } catch (e) { $('#collStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`; btn.disabled = false; }
+}
+
+/* ================= Início ================= */
+renderUser();
+renderColl();
+loadRates();
+$('#q').focus();
+</script>
+</body>
+</html>
