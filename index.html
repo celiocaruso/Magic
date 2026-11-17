@@ -116,6 +116,7 @@
   #detModal .modal-bg{position:absolute;inset:0}
   .src{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:5px;background:#2a2f3a;color:var(--muted);vertical-align:middle}
   .src.ct{background:#1d4f6b;color:#cfe9f7}
+  .src.few{background:#6b4a1d;color:#ffe2b8}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -410,15 +411,15 @@ async function setYear(id, y) {
 function bestPrice(r) {
   const ct = num(r.ct_price);
   const ctBrl = ct == null ? null : r.ct_currency === 'EUR' ? (rates.eur ? ct * rates.eur : null) : ct;
-  if (ctBrl != null) return { brl: ctBrl, src: r.ct_lang_exact ? 'CT' : 'CT*', orig: 'R$ ' + ctBrl.toFixed(2).replace('.', ','),
-    tip: `CardTrader: mediana dos anúncios mais baratos ${r.ct_lang_exact ? 'em ' + (LANG_PT[r.lang] || r.lang) : 'em qualquer idioma (não há anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'} · ${r.ct_listings || 0} anúncio(s)` };
+  if (ctBrl != null) return { brl: ctBrl, src: (r.ct_lang_exact ? 'CT' : 'CT*') + ((r.ct_listings || 0) < 3 ? '!' : ''), orig: 'R$ ' + ctBrl.toFixed(2).replace('.', ','),
+    tip: `CardTrader: mediana dos anúncios mais baratos ${r.ct_lang_exact ? 'em ' + (LANG_PT[r.lang] || r.lang) : 'em qualquer idioma (não há anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'} · ${r.ct_listings || 0} anúncio(s)${(r.ct_listings || 0) < 3 ? ' — POUCA OFERTA: preço pedido por 1–2 vendedores, pode estar fora do mercado' : ''}` };
   const u = num(r.price_usd);
   if (u != null && rates.usd) return { brl: u * rates.usd, src: r.price_from_en ? 'TCG·EN' : 'TCG', orig: 'US$ ' + u.toFixed(2), tip: 'TCGplayer via Scryfall' + (r.price_from_en ? ' (preço da versão em inglês)' : '') };
   const e = num(r.price_eur);
   if (e != null && rates.eur) return { brl: e * rates.eur, src: 'MKM', orig: '€ ' + e.toFixed(2), tip: 'Cardmarket via Scryfall' };
   return null;
 }
-const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''}" title="${esc(b.tip)}">${b.src}</span>` : '';
+const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''} ${b.src.endsWith('!') ? 'few' : ''}" title="${esc(b.tip)}">${b.src}</span>` : '';
 const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
