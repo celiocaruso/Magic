@@ -94,6 +94,26 @@
   .vhtoggle:hover{color:var(--txt)}
   .vhtoggle .chev{font-size:12px;width:12px}
   select.langsel{padding:3px 6px;font-size:12px;border-radius:6px}
+  .dbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(1100px,96vw);max-height:94vh;overflow:auto;position:relative;padding:24px}
+  .dclose{position:sticky;top:0;float:right;background:var(--panel2);border:1px solid var(--line);color:var(--txt);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;z-index:2}
+  .dclose:hover{border-color:var(--accent)}
+  .dgrid{display:grid;grid-template-columns:minmax(260px,400px) 1fr;gap:28px}
+  @media (max-width:820px){.dgrid{grid-template-columns:1fr}}
+  .dimg{position:sticky;top:0}
+  .dimg img{width:100%;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.6);cursor:zoom-in;display:block}
+  .dimg img.zoom{cursor:zoom-out}
+  .dimg .flip{margin-top:10px;width:100%}
+  .dbox h2{margin:0;font-size:26px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .dsec{margin-top:16px;padding:14px 16px;background:var(--panel2);border-radius:10px}
+  .dsec h4{margin:0 0 10px;font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 18px;font-size:14px}
+  .kv div span{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .oracle{font-size:15px;line-height:1.55;white-space:pre-line}
+  .oracle img{width:15px;height:15px;vertical-align:-2px}
+  .flavor{font-style:italic;color:var(--muted);margin-top:10px;white-space:pre-line}
+  .clickable{cursor:pointer}
+  .clickable:hover .cname{color:var(--accent);text-decoration:underline}
+  #detModal .modal-bg{position:absolute;inset:0}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -214,6 +234,9 @@
       </div>
     </div>
   </div>
+</div>
+<div class="modal" id="detModal" role="dialog" aria-modal="true" aria-label="Detalhes da carta">
+  <div class="dbox" id="detBox"></div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -844,6 +867,171 @@ async function loadCardHistory(card, finish) {
   box.innerHTML = head + (chart || `<span class="muted">O histórico começa a partir da primeira consulta${data.length ? ' (' + data[0].captured_on.split('-').reverse().join('/') + ')' : ''}. As cartas da sua coleção são atualizadas todo dia automaticamente, e cada dia vira um ponto deste gráfico.</span>`);
 }
 
+/* ================= Detalhes da carta ================= */
+let det = null; // { card, row, face, item }
+const symText = t => esc(t || '').replace(/\{([^}]+)\}/g, (m, k) => `<img src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(k.replace(/\//g, ''))}.svg" alt="${esc(m)}">`);
+const fmtDate = d => d ? d.split('-').reverse().join('/') : '—';
+
+async function openDetailsById(scryId, row, extra = {}) {
+  det = { card: null, row, face: 0, ...extra };
+  $('#detBox').innerHTML = '<button class="dclose" id="detX" aria-label="Fechar">×</button><p class="status">carregando detalhes…</p>';
+  $('#detX').onclick = closeDetails;
+  $('#detModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  try {
+    const card = await sf('/cards/' + encodeURIComponent(scryId));
+    if (card.lang !== 'en' && !hasPrice(card)) {
+      try { const en = await sf(`/cards/${card.set}/${encodeURIComponent(card.collector_number)}`); borrowEnPrices([card], [en]); } catch {}
+    }
+    if (!det || (det.row && det.row.scryfall_id !== scryId)) return;
+    det.card = card;
+    renderDetails();
+    snapshot(card).catch(() => {});
+  } catch (e) {
+    $('#detBox').innerHTML = `<button class="dclose" id="detX">×</button><p class="warn">Não consegui carregar: ${esc(netMsg(e))}</p>`;
+    $('#detX').onclick = closeDetails;
+  }
+}
+function closeDetails() {
+  $('#detModal').classList.remove('open');
+  document.body.style.overflow = '';
+  det = null;
+}
+$('#detModal').addEventListener('click', e => { if (e.target.id === 'detModal') closeDetails(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && det) closeDetails(); });
+
+function renderDetails() {
+  if (!det || !det.card) return;
+  const c = det.card;
+  const r = det.row && coll ? coll.find(x => x.id === det.row.id) || null : null;
+  const faces = c.card_faces && c.card_faces.length > 1 ? c.card_faces : null;
+  const f = faces ? faces[det.face] : c;
+  const imgs = faces && faces[0].image_uris ? faces.map(x => x.image_uris) : [c.image_uris || {}];
+  const im = imgs[Math.min(det.face, imgs.length - 1)] || {};
+  const finish = r ? r.finish : (det.finish || defaultFinish(c));
+  const p = c.prices || {};
+  const pr = priceFor(c, finish);
+  const unitBRL = toBRL(pr.usd, 'usd') ?? toBRL(pr.eur, 'eur');
+  const lg = c.legalities || {};
+  const pu = c.purchase_uris || {}, ru = c.related_uris || {};
+  const known = (r && r.typed_name) || (c.lang === 'pt' && c.printed_name) || null;
+  const tags = [c.frame_effects?.includes('showcase') && 'showcase', c.full_art && 'arte total', c.promo && 'promo', c.textless && 'sem texto', c.oversized && 'oversize'].filter(Boolean);
+  const priceRows = [['nonfoil', p.usd, p.eur], ['foil', p.usd_foil, p.eur_foil], ['etched', p.usd_etched, p.eur_etched]]
+    .filter(x => x[1] != null || x[2] != null || (c.finishes || []).includes(x[0]));
+
+  $('#detBox').innerHTML = `
+  <button class="dclose" id="detX" aria-label="Fechar (Esc)" title="Fechar (Esc)">×</button>
+  <div class="dgrid">
+    <div class="dimg">
+      <img id="detImg" src="${esc(im.large || im.normal || im.png || '')}" alt="${esc(c.name)}">
+      ${imgs.length > 1 ? '<button class="ghost flip" id="detFlip">↻ Ver o outro lado</button>' : ''}
+      <div class="links" style="justify-content:center">
+        <a href="https://www.ligamagic.com.br/?view=cards/card&card=${encodeURIComponent(c.name)}" target="_blank" rel="noopener" style="border-color:var(--accent);color:var(--accent)">LigaMagic ↗</a>
+        ${pu.tcgplayer ? `<a href="${pu.tcgplayer}" target="_blank" rel="noopener">TCGplayer</a>` : ''}
+        ${pu.cardmarket ? `<a href="${pu.cardmarket}" target="_blank" rel="noopener">Cardmarket</a>` : ''}
+        ${ru.edhrec ? `<a href="${ru.edhrec}" target="_blank" rel="noopener">EDHREC</a>` : ''}
+        <a href="${c.scryfall_uri}" target="_blank" rel="noopener">Scryfall</a>
+      </div>
+    </div>
+    <div>
+      <h2>${esc(f.name || c.name)} ${manaHtml(f.mana_cost ?? manaCostOf(c))}${rlHtml(c.reserved)}</h2>
+      ${known ? `<div class="muted" style="font-style:italic;margin-top:2px">“${esc(known)}”</div>` : ''}
+      <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt)">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(f.type_line || c.type_line || '')}</span></div>
+
+      ${r ? `<div class="colbox in" style="margin-top:12px">
+        <span class="st">✓ Na sua coleção</span>
+        <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-dd="-1">−</button><input class="qty" id="detQty" type="number" min="0" value="${r.quantity}"><button class="mini" data-dd="1">+</button> unid.</span>
+        <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="detLang"')}</span>
+        <span style="display:flex;gap:6px;align-items:center">Acabamento <b>${FINISH_PT[r.finish]}</b></span>
+        <span style="display:flex;gap:6px;align-items:center;flex:1;min-width:220px">Nome em português <input id="detTn" class="qty" style="width:auto;flex:1;text-align:left;font-weight:400" value="${esc(r.typed_name || '')}" placeholder="como você conhece a carta"></span>
+      </div>` : ''}
+
+      <div class="dsec"><h4>Preço de mercado ${c._fromEn ? '<span style="text-transform:none;letter-spacing:0;font-weight:400">· * da versão em inglês</span>' : ''}</h4>
+        ${priceRows.length ? `<table style="margin-top:0">
+          <tr><th>Versão</th><th class="num">TCGplayer</th><th class="num">≈ R$</th><th class="num">Cardmarket</th><th class="num">≈ R$</th></tr>
+          ${priceRows.map(x => `<tr ${x[0] === finish ? 'style="background:var(--panel)"' : ''}><td>${FINISH_PT[x[0]]}${x[0] === finish ? ' ◂' : ''}</td>
+            <td class="num">${fUSD(num(x[1]))}</td><td class="num brl">${fBRL(toBRL(num(x[1]), 'usd'))}</td>
+            <td class="num">${fEUR(num(x[2]))}</td><td class="num brl">${fBRL(toBRL(num(x[2]), 'eur'))}</td></tr>`).join('')}
+        </table>` : '<span class="muted">Sem preço registrado.</span>'}
+        ${r && unitBRL != null ? `<div style="margin-top:10px;font-size:15px">Valor das suas ${r.quantity} unid.: <span class="brl" style="font-size:18px">${fBRL(unitBRL * r.quantity)}</span></div>` : ''}
+      </div>
+
+      <div class="dsec" id="detHist"><h4>Histórico de preço</h4><span class="muted">carregando…</span></div>
+
+      ${(f.oracle_text || f.flavor_text || c.oracle_text) ? `<div class="dsec"><h4>Texto da carta</h4>
+        <div class="oracle">${symText(f.oracle_text ?? c.oracle_text)}</div>
+        ${f.power != null ? `<div style="margin-top:8px;font-weight:700">${esc(f.power)}/${esc(f.toughness)}</div>` : f.loyalty ? `<div style="margin-top:8px;font-weight:700">Lealdade ${esc(f.loyalty)}</div>` : ''}
+        ${f.flavor_text ? `<div class="flavor">${esc(f.flavor_text)}</div>` : ''}
+        ${c.lang !== 'en' && (f.printed_text || c.printed_text) ? `<div class="flavor" style="font-style:normal;margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><b>Texto impresso (${LANG_PT[c.lang] || c.lang}):</b>\n${symText(f.printed_text || c.printed_text)}</div>` : ''}
+      </div>` : ''}
+
+      <div class="dsec"><h4>Edição e impressão</h4>
+        <div class="kv">
+          <div><span>Coleção</span>${esc(c.set_name)} (${esc(c.set.toUpperCase())})</div>
+          <div><span>Número</span>#${esc(c.collector_number)}</div>
+          <div><span>Lançamento</span>${fmtDate(c.released_at)}</div>
+          <div><span>Ilustrador</span>${esc(c.artist || f.artist || '—')}</div>
+          <div><span>Idioma da impressão</span>${LANG_PT[c.lang] || esc(c.lang)}${c.printed_name ? ' · ' + esc(c.printed_name) : ''}</div>
+          <div><span>Borda</span>${BORDER_PT[c.border_color] || esc(c.border_color || '—')}</div>
+          <div><span>Moldura</span>${esc(c.frame || '—')}${tags.length ? ' · ' + esc(tags.join(', ')) : ''}</div>
+          <div><span>Acabamentos</span>${(c.finishes || []).map(x => FINISH_PT[x] || x).join(', ') || '—'}</div>
+          <div><span>Custo total de mana</span>${c.cmc ?? '—'}</div>
+          <div><span>Reserved List</span>${c.reserved ? 'Sim' : 'Não'}</div>
+        </div>
+      </div>
+
+      <div class="dsec"><h4>Força de jogo</h4>
+        <div style="margin-bottom:8px">${c.edhrec_rank ? `<b>#${c.edhrec_rank.toLocaleString('pt-BR')}</b> em popularidade no Commander (EDHREC)` : '<span class="muted">Sem ranking no EDHREC.</span>'}${c.penny_rank ? ` · <b>#${c.penny_rank.toLocaleString('pt-BR')}</b> no Penny Dreadful` : ''}</div>
+        <div class="chips">${FORMATS.filter(([k]) => lg[k]).map(([k, n]) => `<span class="chip ${lg[k]}" title="${LEG_PT[lg[k]] || lg[k]}">${n}${lg[k] === 'banned' ? ' ✕' : lg[k] === 'restricted' ? ' ¹' : ''}</span>`).join('')}</div>
+      </div>
+    </div>
+  </div>`;
+
+  $('#detX').onclick = closeDetails;
+  const di = $('#detImg');
+  di.onclick = () => { const z = di.classList.toggle('zoom'); di.src = z ? (im.png || im.large || di.src) : (im.large || im.normal || di.src); di.parentElement.style.position = z ? 'static' : ''; };
+  if ($('#detFlip')) $('#detFlip').onclick = () => { det.face = det.face ? 0 : 1; renderDetails(); };
+  loadDetHistory(c, finish);
+
+  if (r) {
+    const afterChange = () => { renderColl(); renderCollBadge(); renderDetails(); };
+    const q = $('#detQty');
+    const setQ = async v => {
+      v = Math.max(0, Math.floor(Number(v)));
+      if (isNaN(v)) { q.value = r.quantity; return; }
+      try { await setQty(r.id, v); if (v < 1) { toast(r.name + ' removida'); renderColl(); closeDetails(); return; } afterChange(); saveValueToday().catch(() => {}); }
+      catch (e) { toast('Erro: ' + e.message); }
+    };
+    q.onchange = () => setQ(q.value);
+    q.onkeydown = e => { if (e.key === 'Enter') q.blur(); };
+    $('#detBox').querySelectorAll('[data-dd]').forEach(b => b.onclick = () => setQ(r.quantity + +b.dataset.dd));
+    $('#detLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); afterChange(); } catch (err) { toast('Erro: ' + err.message); } };
+    const tn = $('#detTn');
+    tn.onkeydown = e => { if (e.key === 'Enter') tn.blur(); };
+    tn.onchange = async () => {
+      const v = tn.value.trim() || null;
+      const { data, error } = await db.from('collection_items').update({ typed_name: v, updated_at: new Date().toISOString() }).eq('id', r.id).select().single();
+      if (error) { toast('Erro: ' + error.message); return; }
+      Object.assign(r, data); toast(v ? 'Nome salvo: ' + v : 'Nome removido'); afterChange();
+    };
+  }
+}
+
+async function loadDetHistory(card, finish) {
+  const box = $('#detHist'); if (!box) return;
+  const head = '<h4>Histórico de preço</h4>';
+  if (!db || !user) { box.innerHTML = head + '<span class="muted">Entre para ver o histórico.</span>'; return; }
+  const { data, error } = await db.from('price_snapshots').select('*').eq('scryfall_id', card.id).order('captured_on').limit(400);
+  if (!det || det.card !== card || !$('#detHist')) return;
+  if (error) { box.innerHTML = head + `<span class="warn">${esc(error.message)}</span>`; return; }
+  const col = finish === 'foil' ? ['usd_foil', 'eur_foil'] : finish === 'etched' ? ['usd_etched', null] : ['usd', 'eur'];
+  const pts = data.map(s => {
+    const u = num(s[col[0]]), e = col[1] ? num(s[col[1]]) : null;
+    return { d: s.captured_on, v: u != null && s.usd_brl ? u * s.usd_brl : e != null && s.eur_brl ? e * s.eur_brl : null };
+  });
+  $('#detHist').innerHTML = head + (lineChart(pts) || `<span class="muted">Ainda há só ${data.length || 'nenhum'} registro${data.length === 1 ? '' : 's'}${data.length ? ' (desde ' + fmtDate(data[0].captured_on) + ')' : ''}. A atualização diária adiciona um ponto por dia.</span>`);
+}
+
 /* ================= Lista ================= */
 function parseLine(line) {
   let s = line.trim();
@@ -938,10 +1126,14 @@ function renderList() {
     <table>
       <tr><th>Qtd</th><th>Carta</th><th>Edição</th><th class="num">Unit.</th><th class="num">Unit. R$</th><th class="num">Total R$</th></tr>
       ${rows.map(r => `<tr><td>${r.it.qty}</td>
-        <td><img class="thumb" src="${img(r.card).small || ''}" alt=""><a href="${r.card.scryfall_uri}" target="_blank" rel="noopener">${esc(r.card.name)}</a>${r.it.foil ? ' <span class="muted">✦ foil</span>' : ''}</td>
+        <td><span class="clickable" data-ldet="${r.card.id}" data-fin="${r.it.foil ? 'foil' : ''}" title="Ver detalhes"><img class="thumb" src="${img(r.card).small || ''}" alt=""><span class="cname">${esc(r.card.name)}</span></span>${r.it.foil ? ' <span class="muted">✦ foil</span>' : ''}</td>
         <td class="muted">${r.card.set.toUpperCase()} #${esc(r.card.collector_number)}</td>
         <td class="num muted">${fo(r.u)}</td><td class="num">${fBRL(r.ub)}</td><td class="num brl">${fBRL(r.tb)}</td></tr>`).join('')}
     </table>`;
+  $('#listOut').querySelectorAll('[data-ldet]').forEach(el => el.onclick = () => {
+    const row = coll && coll.find(x => x.scryfall_id === el.dataset.ldet && (el.dataset.fin ? x.finish !== 'nonfoil' : x.finish === 'nonfoil'));
+    openDetailsById(el.dataset.ldet, row || null, { finish: el.dataset.fin || undefined });
+  });
 }
 function downloadCSV(name, head, lines) {
   const blob = new Blob(['﻿' + [head.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -1047,7 +1239,7 @@ function renderColl() {
       ${rows.length ? '' : '<tr><td colspan="10" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
+        <td><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt=""><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
         <td>${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
         <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
@@ -1093,6 +1285,9 @@ function renderColl() {
     };
     inp.addEventListener('change', commit);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+  });
+  out.querySelectorAll('[data-det]').forEach(el => el.onclick = () => {
+    const r = coll.find(x => x.id === el.dataset.det); if (r) openDetailsById(r.scryfall_id, r);
   });
   out.querySelectorAll('select[data-lang]').forEach(sel => sel.onchange = async () => {
     try { await setLang(sel.dataset.lang, sel.value); toast('Idioma: ' + LANG_PT[sel.value]); renderColl(); }
