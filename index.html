@@ -1211,6 +1211,7 @@ $('#csv').onclick = () => {
 /* ================= Minha coleção ================= */
 let collBasis = 'usd', collRarity = '', collColor = '', collQuery = '', collSet = '', collLang = '';
 let collSort = { key: 'total', dir: -1 };
+let collComposing = false, collSearchTimer = null;
 const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
 const COLL_COLS = [
   { key: 'qty', label: 'Qtd', get: o => o.r.quantity, num: true },
@@ -1321,14 +1322,21 @@ function renderColl() {
   $('#collSet').onchange = e => { collSet = e.target.value; renderColl(); };
   $('#collLang').onchange = e => { collLang = e.target.value; renderColl(); };
   const qi = $('#collQ');
-  qi.oninput = () => {
-    clearTimeout(qi._t);
-    qi._t = setTimeout(() => {
-      collQuery = qi.value; const pos = qi.selectionStart;
+  // Acentos (´ ~ ^ ¨ `) no Mac/Windows passam por uma "composição": não redesenhar no meio dela,
+  // senão o campo é recriado e o acento pendente se perde.
+  const applySearch = () => {
+    clearTimeout(collSearchTimer);
+    collSearchTimer = setTimeout(() => {
+      const cur = $('#collQ');
+      if (!cur || collComposing) return;
+      collQuery = cur.value; const pos = cur.selectionStart;
       renderColl();
       const n = $('#collQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch {}
-    }, 200);
+    }, 300);
   };
+  qi.addEventListener('compositionstart', () => { collComposing = true; clearTimeout(collSearchTimer); });
+  qi.addEventListener('compositionend', () => { collComposing = false; applySearch(); });
+  qi.oninput = e => { if (e.isComposing || collComposing) return; applySearch(); };
   qi.onkeydown = e => { if (e.key === 'Escape') { collQuery = ''; renderColl(); $('#collQ').focus(); } };
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
