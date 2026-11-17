@@ -90,6 +90,9 @@
   .cor{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
   .lang{display:inline-block;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;vertical-align:middle;margin-left:6px}
   .pcard .tagl{position:absolute;top:10px;right:10px;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
+  .vhtoggle{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:flex;gap:6px;align-items:center;width:100%;text-align:left}
+  .vhtoggle:hover{color:var(--txt)}
+  .vhtoggle .chev{font-size:12px;width:12px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -1006,7 +1009,10 @@ function renderColl() {
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
     <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
-    <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
+    <div class="panel2" style="padding:${vhOpen ? '12px 14px' : '8px 14px'}">
+      <button class="vhtoggle" id="vhToggle" aria-expanded="${vhOpen}"><span class="chev">${vhOpen ? '▾' : '▸'}</span> Valor da coleção ao longo do tempo${!vhOpen && valueHist && valueHist.length ? ` <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">· ${valueHist.length} dia(s) registrados</span>` : ''}</button>
+      ${vhOpen ? `<div id="vhBox" style="margin-top:8px">${valueHistHtml()}</div>` : ''}
+    </div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
       ${collHeaderHtml()}
@@ -1022,6 +1028,7 @@ function renderColl() {
         <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
   $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
+  $('#vhToggle').onclick = () => { vhOpen = !vhOpen; try { localStorage.setItem('magic.vhOpen', vhOpen ? '1' : '0'); } catch {} renderColl(); };
   out.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => {
     const k = th.dataset.sort, col = COLL_COLS.find(c => c.key === k);
     if (collSort.key === k) collSort.dir *= -1;
@@ -1085,6 +1092,7 @@ async function saveValueToday() {
     { onConflict: 'user_id,captured_on' });
 }
 let valueHist = null;
+let vhOpen = (() => { try { return localStorage.getItem('magic.vhOpen') === '1'; } catch { return false; } })();
 async function loadValueHistory() {
   if (!db || !user) return;
   const { data } = await db.from('collection_value_history').select('*').order('captured_on').limit(730);
