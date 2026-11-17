@@ -639,15 +639,18 @@ async function syncCurrent() {
   colStatus.busy = true; renderColBox();
   try {
     const row = await addToColl(itemFromCard(currentPrint, currentFinish, currentTyped), pendingQty, true);
-    lookupAdded = row.id; lookupQty = row.quantity; colStatus.row = row;
+    lookupAdded = row.id; lookupQty = row.quantity; colStatus.row = row; pendingQty = 1;
     toast(`${row.name} adicionada à coleção`);
   } catch (e) { colStatus.err = e.message; }
   colStatus.busy = false; renderColBox(); renderCollBadge();
 }
 
 // Ao trocar edição/acabamento: desfaz o que ESTA consulta adicionou e adiciona a nova escolha
+// Trocar de EDIÇÃO adiciona a nova e mantém as anteriores (você pode ter várias edições).
+// Trocar só o ACABAMENTO (normal/foil) da mesma impressão corrige o que esta consulta acabou de adicionar.
 async function changeSelection(print, finish) {
-  if (lookupAdded && user) {
+  const sameFix = currentPrint && print.id === currentPrint.id;
+  if (sameFix && lookupAdded && user) {
     const r = coll && coll.find(x => x.id === lookupAdded);
     if (r && r.quantity === lookupQty) { try { await removeRow(lookupAdded); } catch {} }
     lookupAdded = null;
@@ -684,7 +687,8 @@ function renderColBox() {
   const r = colStatus.row && coll && coll.find(x => x.id === colStatus.row.id);
   if (r) {
     box.className = 'colbox in';
-    box.innerHTML = `<span class="st">✓ Na coleção</span>
+    const sib = coll.filter(x => x.oracle_id && x.oracle_id === r.oracle_id);
+    box.innerHTML = `<span class="st">✓ Na coleção</span>${sib.length > 1 ? `<span class="muted" style="width:100%;order:9;font-size:12px">Você tem ${sib.length} versões desta carta (${sib.reduce((t, x) => t + x.quantity, 0)} unid.): ${sib.map(x => esc(x.set_code.toUpperCase() + ' #' + x.collector_number + (x.finish !== 'nonfoil' ? ' ' + FINISH_PT[x.finish] : ''))).join(', ')}. Clique em outra edição abaixo para adicioná-la também.</span>` : '<span class="muted" style="width:100%;order:9;font-size:12px">Tem outra edição desta carta? Clique nela na grade abaixo para adicioná-la também.</span>'}
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="cbQty" type="number" min="0" step="1" value="${r.quantity}"><button class="mini" data-d="1">+</button> unid.</span>
       <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="cbLang"')}</span>
       <button class="link" id="cbRm">remover da coleção</button>`;
