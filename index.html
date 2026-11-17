@@ -911,7 +911,7 @@ $('#csv').onclick = () => {
 };
 
 /* ================= Minha coleção ================= */
-let collBasis = 'usd', collRarity = '', collColor = '';
+let collBasis = 'usd', collRarity = '', collColor = '', collQuery = '', collSet = '';
 let collSort = { key: 'total', dir: -1 };
 const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
 const COLL_COLS = [
@@ -953,7 +953,10 @@ function renderColl() {
   if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
   let total = 0, totalOrig = 0, count = 0, noPrice = 0;
-  const view = coll.filter(r => (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
+  const nq = norm(collQuery);
+  const view = coll.filter(r => (!nq || norm(r.name).includes(nq) || norm(r.typed_name).includes(nq))
+    && (!collSet || r.set_code === collSet)
+    && (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
     && (!collColor || (collColor === 'M' ? (r.colors || []).length > 1 : collColor === 'C' ? r.colors && !r.colors.length : (r.colors || []).length === 1 && r.colors[0] === collColor)));
   const rows = view.map(r => {
     const u = num(cur === 'usd' ? r.price_usd : r.price_eur), ub = toBRL(u, cur), tb = ub == null ? null : ub * r.quantity;
@@ -967,6 +970,11 @@ function renderColl() {
       <label class="muted">Base de preço:
         <select id="collBasis"><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
       </label>
+      <input id="collQ" type="search" placeholder="🔍 buscar carta (inglês ou português)" value="${esc(collQuery)}" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px 10px;font-size:14px;width:260px">
+      <label class="muted">Coleção:
+        <select id="collSet" style="max-width:220px"><option value="">Todas</option>${[...new Map(coll.filter(r => r.set_code).map(r => [r.set_code, r.set_name || r.set_code])).entries()]
+          .sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => `<option value="${esc(k)}" ${collSet === k ? 'selected' : ''}>${esc(n)} (${esc(k.toUpperCase())}) · ${coll.filter(r => r.set_code === k).reduce((t, r) => t + r.quantity, 0)}</option>`).join('')}</select>
+      </label>
       <label class="muted">Raridade:
         <select id="collRar"><option value="">Todas</option>${['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => coll.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('')}${coll.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : ''}</select>
       </label>
@@ -977,11 +985,12 @@ function renderColl() {
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${collRarity || collColor ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
     <div class="panel2"><h4>Valor da coleção ao longo do tempo</h4><div id="vhBox">${valueHistHtml()}</div></div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
       ${collHeaderHtml()}
+      ${rows.length ? '' : '<tr><td colspan="9" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
         <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
@@ -1001,6 +1010,17 @@ function renderColl() {
   });
   $('#collRar').onchange = e => { collRarity = e.target.value; renderColl(); };
   $('#collCor').onchange = e => { collColor = e.target.value; renderColl(); };
+  $('#collSet').onchange = e => { collSet = e.target.value; renderColl(); };
+  const qi = $('#collQ');
+  qi.oninput = () => {
+    clearTimeout(qi._t);
+    qi._t = setTimeout(() => {
+      collQuery = qi.value; const pos = qi.selectionStart;
+      renderColl();
+      const n = $('#collQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch {}
+    }, 200);
+  };
+  qi.onkeydown = e => { if (e.key === 'Escape') { collQuery = ''; renderColl(); $('#collQ').focus(); } };
   out.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
     const r = coll.find(x => x.id === b.dataset.id);
     try { await setQty(r.id, r.quantity + +b.dataset.d); renderColl(); } catch (e) { toast('Erro: ' + e.message); }

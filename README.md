@@ -8,6 +8,7 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - **Toda carta avaliada entra na coleção** do usuário, a menos que a opção "Carta da coleção" esteja desmarcada.
 - Guarda o nome digitado (ex.: em português) além do nome em inglês, editável na coleção.
 - Guarda custo de mana, cor (Branco, Azul, Preto, Vermelho, Verde, Multicolorida, Incolor) e tipo da carta; coluna e filtro de cor na coleção.
+- Busca por nome (inglês ou português) e filtro por coleção/edição em Minha coleção.
 - Guarda a raridade (Comum, Incomum, Rara, Mítica…) e se a carta está na Reserved List; filtro por raridade na coleção.
 - Avalia listas coladas (formato de exportação de decks) e soma à coleção.
 - Aba "Minha coleção": valor total, ajuste de quantidade, atualização de preços, exportação CSV.
