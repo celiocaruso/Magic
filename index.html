@@ -114,6 +114,8 @@
   .clickable{cursor:pointer}
   .clickable:hover .cname{color:var(--accent);text-decoration:underline}
   #detModal .modal-bg{position:absolute;inset:0}
+  .src{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:5px;background:#2a2f3a;color:var(--muted);vertical-align:middle}
+  .src.ct{background:#1d4f6b;color:#cfe9f7}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -403,6 +405,19 @@ async function setYear(id, y) {
   const r = coll && coll.find(x => x.id === id); if (r) Object.assign(r, data);
   return data;
 }
+// Melhor preço disponível para UMA carta da coleção, em R$:
+// 1) CardTrader no idioma da carta (anúncios reais); 2) CardTrader em outro idioma; 3) TCGplayer (US$); 4) Cardmarket (€)
+function bestPrice(r) {
+  const ct = num(r.ct_price);
+  if (ct != null && rates.eur) return { brl: ct * rates.eur, src: r.ct_lang_exact ? 'CT' : 'CT*', orig: '€ ' + ct.toFixed(2),
+    tip: `CardTrader: mediana dos anúncios mais baratos ${r.ct_lang_exact ? 'em ' + (LANG_PT[r.lang] || r.lang) : 'em qualquer idioma (não há anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'} · ${r.ct_listings || 0} anúncio(s)` };
+  const u = num(r.price_usd);
+  if (u != null && rates.usd) return { brl: u * rates.usd, src: r.price_from_en ? 'TCG·EN' : 'TCG', orig: 'US$ ' + u.toFixed(2), tip: 'TCGplayer via Scryfall' + (r.price_from_en ? ' (preço da versão em inglês)' : '') };
+  const e = num(r.price_eur);
+  if (e != null && rates.eur) return { brl: e * rates.eur, src: 'MKM', orig: '€ ' + e.toFixed(2), tip: 'Cardmarket via Scryfall' };
+  return null;
+}
+const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''}" title="${esc(b.tip)}">${b.src}</span>` : '';
 const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
@@ -1037,7 +1052,13 @@ function renderDetails() {
             <td class="num">${fUSD(num(x[1]))}</td><td class="num brl">${fBRL(toBRL(num(x[1]), 'usd'))}</td>
             <td class="num">${fEUR(num(x[2]))}</td><td class="num brl">${fBRL(toBRL(num(x[2]), 'eur'))}</td></tr>`).join('')}
         </table>` : '<span class="muted">Sem preço registrado.</span>'}
-        ${r && unitBRL != null ? `<div style="margin-top:10px;font-size:15px">Valor das suas ${r.quantity} unid.: <span class="brl" style="font-size:18px">${fBRL(unitBRL * r.quantity)}</span></div>` : ''}
+        ${r ? (() => {
+          const ctLine = r.ct_updated_at ? (num(r.ct_price) != null
+            ? `<div style="margin-top:10px">CardTrader ${r.ct_lang_exact ? '(' + (LANG_PT[r.lang] || r.lang) + ')' : '(qualquer idioma — sem anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'}: <b>€ ${num(r.ct_price).toFixed(2)}</b> ≈ <span class="brl">${fBRL(toBRL(num(r.ct_price), 'eur'))}</span> <span class="muted">· mediana dos ${Math.min(5, r.ct_listings || 0)} anúncios mais baratos de ${r.ct_listings || 0}</span>${r.ct_blueprint_id ? ` · <a href="https://www.cardtrader.com/cards/${r.ct_blueprint_id}" target="_blank" rel="noopener">ver no CardTrader ↗</a>` : ''}</div>`
+            : `<div class="muted" style="margin-top:10px">CardTrader: nenhum anúncio desta carta no momento.</div>`) : '';
+          const b = bestPrice(r);
+          return ctLine + (b ? `<div style="margin-top:10px;font-size:15px">Valor das suas ${r.quantity} unid. (melhor preço ${srcTag(b)}): <span class="brl" style="font-size:18px">${fBRL(b.brl * r.quantity)}</span></div>` : '');
+        })() : ''}
       </div>
 
       <div class="dsec" id="detHist"><h4>Histórico de preço</h4><span class="muted">carregando…</span></div>
@@ -1234,7 +1255,7 @@ $('#csv').onclick = () => {
 };
 
 /* ================= Minha coleção ================= */
-let collBasis = 'usd', collRarity = '', collColor = '', collQuery = '', collSet = '', collLang = '';
+let collBasis = 'best', collRarity = '', collColor = '', collQuery = '', collSet = '', collLang = '';
 let collSort = { key: 'total', dir: -1 };
 let collComposing = false, collSearchTimer = null;
 const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
@@ -1246,7 +1267,7 @@ const COLL_COLS = [
   { key: 'rarity', label: 'Raridade', get: o => RARITY_ORDER[o.r.rarity] ?? null, num: true },
   { key: 'year', label: 'Ano', get: o => yearOf(o.r), num: true },
   { key: 'set', label: 'Edição', get: o => (o.r.set_name || '') + ' ' + String(o.r.collector_number || '').padStart(6, '0') },
-  { key: 'unit', label: 'Unit.', get: o => o.u, num: true, cls: 'num' },
+  { key: 'unit', label: 'Unit.', get: o => typeof o.u === 'number' ? o.u : o.ub, num: true, cls: 'num' },
   { key: 'unitbrl', label: 'Unit. R$', get: o => o.ub, num: true, cls: 'num' },
   { key: 'total', label: 'Total R$', get: o => o.tb, num: true, cls: 'num' },
 ];
@@ -1278,7 +1299,7 @@ function renderColl() {
   if (!coll) { out.innerHTML = '<p class="status">carregando coleção…</p>'; return; }
   if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
-  let total = 0, totalOrig = 0, count = 0, noPrice = 0;
+  let total = 0, totalOrig = 0, count = 0, noPrice = 0, ctCount = 0;
   const nq = norm(collQuery);
   const view = coll.filter(r => (!nq || norm(r.name).includes(nq) || norm(r.typed_name).includes(nq))
     && (!collSet || r.set_code === collSet)
@@ -1286,16 +1307,19 @@ function renderColl() {
     && (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
     && (!collColor || (collColor === 'M' ? (r.colors || []).length > 1 : collColor === 'C' ? r.colors && !r.colors.length : (r.colors || []).length === 1 && r.colors[0] === collColor)));
   const rows = view.map(r => {
-    const u = num(cur === 'usd' ? r.price_usd : r.price_eur), ub = toBRL(u, cur), tb = ub == null ? null : ub * r.quantity;
-    if (tb != null) { total += tb; totalOrig += u * r.quantity; } else noPrice++;
+    let u, ub, b = null;
+    if (cur === 'best') { b = bestPrice(r); u = b ? b.orig : null; ub = b ? b.brl : null; if (b && b.src.startsWith('CT')) ctCount++; }
+    else { u = num(cur === 'usd' ? r.price_usd : r.price_eur); ub = toBRL(u, cur); }
+    const tb = ub == null ? null : ub * r.quantity;
+    if (tb != null) { total += tb; if (cur !== 'best') totalOrig += u * r.quantity; } else noPrice++;
     count += r.quantity;
-    return { r, u, ub, tb };
+    return { r, u, ub, tb, b };
   }).sort(collComparator());
   const oldest = coll.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
   out.innerHTML = `
     <div class="row" style="margin-top:0">
       <label class="muted">Base de preço:
-        <select id="collBasis"><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
+        <select id="collBasis"><option value="best" ${cur === 'best' ? 'selected' : ''}>Melhor disponível (CardTrader no idioma → TCGplayer)</option><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
       </label>
       <input id="collQ" type="search" placeholder="🔍 buscar carta (inglês ou português)" value="${esc(collQuery)}" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px 10px;font-size:14px;width:260px">
       <label class="muted">Coleção:
@@ -1315,7 +1339,8 @@ function renderColl() {
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet || collLang ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet || collLang ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${cur === 'best' ? `${ctCount} com preço do CardTrader` : `${fo(totalOrig)} na base ${cur.toUpperCase()}`}</small></div>
+    ${cur === 'best' && !coll.some(r => r.ct_updated_at) ? `<div class="hint" style="margin-top:6px">Preços por idioma (CardTrader) ainda não carregados. Clique em <b>Atualizar preços</b>${ctState === 'missing' ? ' — <span style="color:var(--bad)">falta configurar o token do CardTrader no Supabase</span>' : ''}.</div>` : ''}
     <div class="panel2" style="padding:${vhOpen ? '12px 14px' : '8px 14px'}">
       <button class="vhtoggle" id="vhToggle" aria-expanded="${vhOpen}"><span class="chev">${vhOpen ? '▾' : '▸'}</span> Valor da coleção ao longo do tempo${!vhOpen && valueHist && valueHist.length ? ` <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">· ${valueHist.length} dia(s) registrados</span>` : ''}</button>
       ${vhOpen ? `<div id="vhBox" style="margin-top:8px">${valueHistHtml()}</div>` : ''}
@@ -1324,16 +1349,16 @@ function renderColl() {
     <table>
       ${collHeaderHtml()}
       ${rows.length ? '' : '<tr><td colspan="11" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
-      ${rows.map(({ r, u, ub, tb }) => `<tr>
+      ${rows.map(({ r, u, ub, tb, b }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt=""><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
+        <td><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt=""><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
         <td>${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
         <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
         <td>${yearSelect(r.user_year, edYear(r.released_at), `data-year="${r.id}"`)}</td>
         <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
-        <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
+        <td class="num muted" style="white-space:nowrap">${cur === 'best' ? (u || '—') + srcTag(b) : fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
         <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
   $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
@@ -1406,17 +1431,18 @@ function renderColl() {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'nome_digitado', 'ano_carta', 'ano_edicao', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), yearOf(r) || '', edYear(r.released_at) || '', LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'nome_digitado', 'preco_melhor_brl', 'fonte_preco', 'cardtrader_eur', 'ano_carta', 'ano_edicao', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), (bestPrice(r)?.brl ?? '') && bestPrice(r).brl.toFixed(2), bestPrice(r)?.src || '', r.ct_price ?? '', yearOf(r) || '', edYear(r.released_at) || '', LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
 async function saveValueToday() {
   if (!db || !user || !coll || !rates.usd) return;
   let usd = 0, eur = 0, cards = 0;
-  for (const r of coll) { usd += (num(r.price_usd) || 0) * r.quantity; eur += (num(r.price_eur) || 0) * r.quantity; cards += r.quantity; }
+  let brl = 0;
+  for (const r of coll) { usd += (num(r.price_usd) || 0) * r.quantity; eur += (num(r.price_eur) || 0) * r.quantity; cards += r.quantity; const b = bestPrice(r); if (b) brl += b.brl * r.quantity; }
   await db.from('collection_value_history').upsert({ user_id: user.id, captured_on: new Date().toLocaleDateString('sv-SE'),
-    total_usd: Math.round(usd * 100) / 100, total_eur: Math.round(eur * 100) / 100, usd_brl: rates.usd, eur_brl: rates.eur, cards },
+    total_usd: Math.round(usd * 100) / 100, total_eur: Math.round(eur * 100) / 100, total_brl: Math.round(brl * 100) / 100, usd_brl: rates.usd, eur_brl: rates.eur, cards },
     { onConflict: 'user_id,captured_on' });
 }
 let valueHist = null;
@@ -1430,8 +1456,28 @@ async function loadValueHistory() {
 function valueHistHtml() {
   if (!valueHist) return '<span class="muted">carregando…</span>';
   const cur = collBasis;
-  const pts = valueHist.map(h => ({ d: h.captured_on, v: cur === 'usd' ? num(h.total_usd) * num(h.usd_brl) : num(h.total_eur) * num(h.eur_brl) }));
+  const pts = valueHist.map(h => ({ d: h.captured_on, v: cur === 'best' ? (num(h.total_brl) ?? num(h.total_usd) * num(h.usd_brl)) : cur === 'usd' ? num(h.total_usd) * num(h.usd_brl) : num(h.total_eur) * num(h.eur_brl) }));
   return lineChart(pts) || '<span class="muted">O gráfico aparece a partir do segundo dia: a coleção é reavaliada automaticamente todo dia.</span>';
+}
+
+let ctState = null; // null | 'ok' | 'missing' | 'error'
+async function syncCardTrader() {
+  if (!db || !user) return;
+  const st = $('#collStatus'); if (st) st.textContent = 'buscando preços por idioma no CardTrader…';
+  try {
+    const { data, error } = await db.functions.invoke('cardtrader-sync', { body: {} });
+    if (error) {
+      let msg = error.message;
+      try { const ctx = await error.context?.json?.(); if (ctx?.error) msg = ctx.error; } catch {}
+      ctState = /TOKEN/i.test(msg) ? 'missing' : 'error';
+      toast(ctState === 'missing' ? 'CardTrader ainda não configurado (falta o token)' : 'CardTrader: ' + msg);
+      return;
+    }
+    ctState = 'ok';
+    const { data: fresh } = await db.from('collection_items').select('*').order('name');
+    if (fresh) coll = fresh;
+    toast(`CardTrader: ${data.priced}/${data.items} cartas com preço (${data.exact_language} no idioma exato)`);
+  } catch (e) { ctState = 'error'; toast('CardTrader: ' + e.message); }
 }
 
 async function refreshPrices() {
@@ -1454,6 +1500,7 @@ async function refreshPrices() {
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
     }
     for (const c of found) snapshot(c).catch(() => {});
+    await syncCardTrader();
     renderColl(); toast('Preços atualizados');
     saveValueToday().then(loadValueHistory).catch(() => {});
   } catch (e) { $('#collStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`; btn.disabled = false; }

@@ -21,6 +21,12 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - Histórico de preço por edição e do valor total da coleção (gráficos).
 - Atualização diária automática: o pg_cron chama a Edge Function `refresh-prices` às 07:17 (Brasília), que reavalia todas as cartas de todas as coleções e grava `price_snapshots` e `collection_value_history`.
 
+## Fontes de preço
+- **Scryfall** (TCGplayer US$ e Cardmarket €): versão em inglês; para impressões em outro idioma sem preço próprio, usa a mesma carta em inglês.
+- **CardTrader** (API oficial): preço de anúncios reais **no idioma da sua carta** (ex.: português), inclusive edições só estrangeiras como *Fourth Edition Black Bordered* (1995–96). Edge Function `cardtrader-sync`, diária às 07:47 (Brasília) e no botão "Atualizar preços". Requer o secret `CARDTRADER_TOKEN` nas Edge Functions do Supabase.
+- **Melhor disponível** (padrão em Minha coleção): CardTrader no idioma → CardTrader em outro idioma → TCGplayer → Cardmarket. A fonte aparece ao lado do preço (CT, CT*, TCG, TCG·EN, MKM).
+- **Brasil**: LigaMagic e MYP Cards não têm API pública; o app mostra o link da LigaMagic.
+
 ## Stack
 - Front: `index.html` (HTML + JS puro, supabase-js via CDN), publicado no GitHub Pages.
 - Dados de cartas: [Scryfall API](https://scryfall.com/docs/api).
