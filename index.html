@@ -409,7 +409,8 @@ async function setYear(id, y) {
 // 1) CardTrader no idioma da carta (anúncios reais); 2) CardTrader em outro idioma; 3) TCGplayer (US$); 4) Cardmarket (€)
 function bestPrice(r) {
   const ct = num(r.ct_price);
-  if (ct != null && rates.eur) return { brl: ct * rates.eur, src: r.ct_lang_exact ? 'CT' : 'CT*', orig: '€ ' + ct.toFixed(2),
+  const ctBrl = ct == null ? null : r.ct_currency === 'EUR' ? (rates.eur ? ct * rates.eur : null) : ct;
+  if (ctBrl != null) return { brl: ctBrl, src: r.ct_lang_exact ? 'CT' : 'CT*', orig: 'R$ ' + ctBrl.toFixed(2).replace('.', ','),
     tip: `CardTrader: mediana dos anúncios mais baratos ${r.ct_lang_exact ? 'em ' + (LANG_PT[r.lang] || r.lang) : 'em qualquer idioma (não há anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'} · ${r.ct_listings || 0} anúncio(s)` };
   const u = num(r.price_usd);
   if (u != null && rates.usd) return { brl: u * rates.usd, src: r.price_from_en ? 'TCG·EN' : 'TCG', orig: 'US$ ' + u.toFixed(2), tip: 'TCGplayer via Scryfall' + (r.price_from_en ? ' (preço da versão em inglês)' : '') };
@@ -1054,7 +1055,7 @@ function renderDetails() {
         </table>` : '<span class="muted">Sem preço registrado.</span>'}
         ${r ? (() => {
           const ctLine = r.ct_updated_at ? (num(r.ct_price) != null
-            ? `<div style="margin-top:10px">CardTrader ${r.ct_lang_exact ? '(' + (LANG_PT[r.lang] || r.lang) + ')' : '(qualquer idioma — sem anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'}: <b>€ ${num(r.ct_price).toFixed(2)}</b> ≈ <span class="brl">${fBRL(toBRL(num(r.ct_price), 'eur'))}</span> <span class="muted">· mediana dos ${Math.min(5, r.ct_listings || 0)} anúncios mais baratos de ${r.ct_listings || 0}</span>${r.ct_blueprint_id ? ` · <a href="https://www.cardtrader.com/cards/${r.ct_blueprint_id}" target="_blank" rel="noopener">ver no CardTrader ↗</a>` : ''}</div>`
+            ? `<div style="margin-top:10px">CardTrader ${r.ct_lang_exact ? '(' + (LANG_PT[r.lang] || r.lang) + ')' : '(qualquer idioma — sem anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'}: <span class="brl">${fBRL(bestPrice(r)?.brl)}</span> <span class="muted">· mediana dos ${Math.min(5, r.ct_listings || 0)} anúncios mais baratos de ${r.ct_listings || 0}</span>${r.ct_blueprint_id ? ` · <a href="https://www.cardtrader.com/cards/${r.ct_blueprint_id}" target="_blank" rel="noopener">ver no CardTrader ↗</a>` : ''}</div>`
             : `<div class="muted" style="margin-top:10px">CardTrader: nenhum anúncio desta carta no momento.</div>`) : '';
           const b = bestPrice(r);
           return ctLine + (b ? `<div style="margin-top:10px;font-size:15px">Valor das suas ${r.quantity} unid. (melhor preço ${srcTag(b)}): <span class="brl" style="font-size:18px">${fBRL(b.brl * r.quantity)}</span></div>` : '');
@@ -1465,7 +1466,15 @@ async function syncCardTrader() {
   if (!db || !user) return;
   const st = $('#collStatus'); if (st) st.textContent = 'buscando preços por idioma no CardTrader…';
   try {
-    const { data, error } = await db.functions.invoke('cardtrader-sync', { body: {} });
+    const since = new Date().toISOString();
+    let data = null, error = null, tot = { processed: 0, priced: 0, exact_language: 0 };
+    for (let i = 0; i < 40; i++) {
+      ({ data, error } = await db.functions.invoke('cardtrader-sync', { body: { since } }));
+      if (error) break;
+      tot.processed += data.processed; tot.priced += data.priced; tot.exact_language += data.exact_language;
+      if (st) st.textContent = `CardTrader: ${tot.processed} carta(s) processadas, faltam ${data.remaining}…`;
+      if (!data.remaining || !data.processed) break;
+    }
     if (error) {
       let msg = error.message;
       try { const ctx = await error.context?.json?.(); if (ctx?.error) msg = ctx.error; } catch {}
@@ -1476,7 +1485,7 @@ async function syncCardTrader() {
     ctState = 'ok';
     const { data: fresh } = await db.from('collection_items').select('*').order('name');
     if (fresh) coll = fresh;
-    toast(`CardTrader: ${data.priced}/${data.items} cartas com preço (${data.exact_language} no idioma exato)`);
+    toast(`CardTrader: ${tot.priced}/${tot.processed} cartas com preço (${tot.exact_language} no idioma da carta)`);
   } catch (e) { ctState = 'error'; toast('CardTrader: ' + e.message); }
 }
 
