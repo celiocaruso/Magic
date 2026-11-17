@@ -117,6 +117,9 @@
   .src{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:5px;background:#2a2f3a;color:var(--muted);vertical-align:middle}
   .src.ct{background:#1d4f6b;color:#cfe9f7}
   .src.few{background:#6b4a1d;color:#ffe2b8}
+  img.seticon{width:15px;height:15px;vertical-align:-3px;margin-right:4px;filter:invert(1) opacity(.85)}
+  .pcard .pen{font-size:11px;color:var(--muted)}
+  .phead .chk{font-size:13px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -420,6 +423,14 @@ function bestPrice(r) {
   return null;
 }
 const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''} ${b.src.endsWith('!') ? 'few' : ''}" title="${esc(b.tip)}">${b.src}</span>` : '';
+const SET_PT = {
+  '4ed': 'Quarta Edição', '4bb': 'Quarta Edição (borda preta)', 'ice': 'Era Glacial', 'hml': 'Terras Natais',
+  'all': 'Alianças', 'mir': 'Miragem', 'vis': 'Visões', 'wth': 'Alíseos', 'chr': 'Crônicas', 'bchr': 'Crônicas (borda preta)',
+  '5ed': 'Quinta Edição', '6ed': 'Sexta Edição (Clássico)', '7ed': 'Sétima Edição', 'por': 'Portal', 'tmp': 'Tempestade',
+  'sth': 'Fortaleza', 'exo': 'Êxodo', 'usg': 'Saga de Urza', 'ren': 'Renascença', 'rin': 'Rinascimento', 'itp': 'Introdutório 2 Jogadores',
+  'fem': 'Impérios Caídos', 'csp': 'Hálito Glacial'
+};
+const setIcon = code => `<img class="seticon" src="https://svgs.scryfall.io/sets/${encodeURIComponent(code === '4bb' ? '4ed' : code === 'bchr' ? 'chr' : code)}.svg" alt="" title="Símbolo da coleção" loading="lazy" onerror="this.style.display='none'">`;
 const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
@@ -606,6 +617,7 @@ function showSugg() {
 function hideSugg() { $('#sugg').style.display = 'none'; }
 
 /* ================= Carta única ================= */
+let onlyPt = (() => { try { return localStorage.getItem('magic.onlyPt') === '1'; } catch { return false; } })();
 let prints = [], currentPrint = null, currentFinish = 'nonfoil', awaitingChoice = false;
 let lookupAdded = null, lookupQty = 1; // linha criada por ESTA consulta (pode ser desfeita/trocada)
 let pendingQty = 1; // quantidade informada antes de escolher a edição
@@ -813,13 +825,14 @@ function printCardHtml(x, i) {
   const qty = rows.reduce((t, r) => t + r.quantity, 0);
   const art = x.artist ? ' · ' + x.artist : '';
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
-  const key = norm(x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : ''));
+  const key = norm((SET_PT[x.set] || '') + ' ' + x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : ''));
   const sel = x.id === currentPrint.id;
   return `<div class="pcard ${sel ? 'sel' : ''} ${qty ? 'owned' : ''}" data-i="${i}" data-k="${esc(key)}">
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
       ${x.lang === 'pt' ? '<span class="tagl">PT</span>' : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
-      <div class="pn">${esc(x.set_name)}</div>
+      <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}</div>
+      ${SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
       <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
       <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
     </div>
@@ -864,7 +877,7 @@ function renderPrint() {
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); return own && own.user_year && own.user_year !== edYear(c.released_at) ? `${own.user_year} <span class="muted" style="font-weight:400">(edição: ${c.released_at.slice(0, 4)})</span>` : c.released_at.slice(0, 4); })()} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
+        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${setIcon(c.set)}${esc(SET_PT[c.set] ? SET_PT[c.set] + ' / ' + c.set_name : c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); return own && own.user_year && own.user_year !== edYear(c.released_at) ? `${own.user_year} <span class="muted" style="font-weight:400">(edição: ${c.released_at.slice(0, 4)})</span>` : c.released_at.slice(0, 4); })()} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -889,7 +902,13 @@ function renderPrint() {
   ${prints.length > 1 ? `
   <div class="phead">
     <h3>Edições e ilustrações (${prints.length}) <span class="muted" style="font-size:12px;font-weight:400">· clique na imagem para ver · <b style="color:var(--accent)">+ Adicionar</b> para guardar · 🔍 detalhes</span></h3>
-    <input id="pfilter" placeholder="filtrar por coleção, ano, artista…" value="${esc(prevFilter)}">
+    <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <label class="chk"><input type="checkbox" id="ponlyPt" ${onlyPt ? 'checked' : ''}> só em português</label>
+      <input id="pfilter" placeholder="filtrar: coleção (ex.: Era Glacial), ano, artista, borda…" value="${esc(prevFilter)}">
+    </span>
+  </div>
+  <div class="hint" style="margin:8px 0 0">Para achar a sua: compare o <b>símbolo da coleção</b> (à direita, na linha do tipo da carta), o <b>idioma</b> e a <b>cor da borda</b>. O ano mostrado é o do lançamento original; tiragens brasileiras podem trazer um ano posterior impresso (ex.: Era Glacial em português com 1996) — nesse caso, escolha a edição e ajuste o "Ano da minha carta".</div>
+  <div style="display:none">
   </div>
   <div class="pgrid" id="pgrid">${prints.map(printCardHtml).join('')}</div>` : ''}`;
   renderColBox();
@@ -919,10 +938,14 @@ function renderPrint() {
     });
     const applyFilter = () => {
       const q = norm($('#pfilter').value);
-      grid.querySelectorAll('.pcard').forEach(b => b.style.display = !q || b.dataset.k.includes(q) ? '' : 'none');
+      grid.querySelectorAll('.pcard').forEach(b => {
+        const pt = prints[+b.dataset.i].lang === 'pt';
+        b.style.display = (!q || b.dataset.k.includes(q)) && (!onlyPt || pt) ? '' : 'none';
+      });
     };
     $('#pfilter').oninput = applyFilter;
-    if (prevFilter) applyFilter();
+    $('#ponlyPt').onchange = e => { onlyPt = e.target.checked; try { localStorage.setItem('magic.onlyPt', onlyPt ? '1' : '0'); } catch {} applyFilter(); };
+    applyFilter();
   }
 }
 
