@@ -93,6 +93,7 @@
   .vhtoggle{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:flex;gap:6px;align-items:center;width:100%;text-align:left}
   .vhtoggle:hover{color:var(--txt)}
   .vhtoggle .chev{font-size:12px;width:12px}
+  select.langsel{padding:3px 6px;font-size:12px;border-radius:6px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -349,6 +350,14 @@ function borrowEnPrices(list, extraEn = []) {
   }
   return list;
 }
+const LANG_OPTS = ['en', 'pt', 'es', 'fr', 'de', 'it', 'ja'];
+const langSelect = (cur, attrs) => `<select class="langsel" ${attrs} title="Idioma da sua carta">${LANG_OPTS.map(l => `<option value="${l}" ${l === (cur || 'en') ? 'selected' : ''}>${LANG_PT[l]}</option>`).join('')}</select>`;
+async function setLang(id, lang) {
+  const { data, error } = await db.from('collection_items').update({ lang, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  if (error) throw error;
+  const r = coll && coll.find(x => x.id === id); if (r) Object.assign(r, data);
+  return data;
+}
 const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
@@ -379,7 +388,7 @@ function itemFromCard(card, finish, typed) {
     price_usd: pr.usd, price_eur: pr.eur,
     rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
     typed_name: typed || null,
-    lang: card.lang || 'en', border_color: card.border_color || null, price_from_en: !!card._fromEn,
+    lang: ['en', 'pt'].includes(card.lang) ? card.lang : 'pt', border_color: card.border_color || null, price_from_en: !!card._fromEn,
     mana_cost: manaCostOf(card), cmc: card.cmc ?? null, colors: colorsOf(card), type_line: card.type_line || face0(card).type_line || null,
   };
 }
@@ -558,10 +567,22 @@ async function pick(name) {
       name = f[0].name; $('#q').value = name;
     }
     currentTyped = foreignTyped(typedRaw, name);
-    let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent('!"' + name + '" game:paper (lang:en or lang:pt)'));
-    prints.push(...page.data);
-    let guard = 0;
-    while (page.has_more && guard++ < 8) { page = await sf(page.next_page); prints.push(...page.data); }
+    const getAll = async q => {
+      const out = [];
+      try {
+        let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent(q));
+        out.push(...page.data);
+        let guard = 0;
+        while (page.has_more && guard++ < 6) { page = await sf(page.next_page); out.push(...page.data); }
+      } catch (e) { if (e.status !== 404) throw e; }
+      return out;
+    };
+    const base = await getAll('!"' + name + '" game:paper');
+    const pts = await getAll('!"' + name + '" game:paper lang:pt');
+    const seen = new Set();
+    for (const c of [...base, ...pts]) if (!seen.has(c.id)) { seen.add(c.id); prints.push(c); }
+    if (!prints.length) throw new Error('nenhuma impressão encontrada');
+    prints.sort((a, b) => b.released_at.localeCompare(a.released_at) || a.set.localeCompare(b.set) || (a.lang === 'en' ? -1 : 1));
     borrowEnPrices(prints);
     if (db && user && !coll) await loadColl();
     const owned = coll ? prints.find(p => coll.some(r => r.scryfall_id === p.id)) : null;
@@ -642,7 +663,9 @@ function renderColBox() {
     box.className = 'colbox in';
     box.innerHTML = `<span class="st">✓ Na coleção</span>
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="cbQty" type="number" min="0" step="1" value="${r.quantity}"><button class="mini" data-d="1">+</button> unid.</span>
+      <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="cbLang"')}</span>
       <button class="link" id="cbRm">remover da coleção</button>`;
+    $('#cbLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); renderPrint(); } catch (err) { toast('Erro: ' + err.message); } };
     box.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
       try { await setQty(r.id, r.quantity + +b.dataset.d); if (r.quantity + +b.dataset.d < 1) { colStatus.row = null; lookupAdded = null; } renderColBox(); renderCollBadge(); }
       catch (e) { toast('Erro: ' + e.message); }
@@ -691,7 +714,7 @@ function printCardHtml(x, i) {
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
   const key = norm(x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || ''));
   return `<button class="pcard ${x.id === currentPrint.id && !awaitingChoice ? 'sel' : ''}" data-i="${i}" data-k="${esc(key)}" title="${esc(x.set_name + art)}">
-    ${owned ? '<span class="tagc">na coleção</span>' : ''}${x.lang !== 'en' ? `<span class="tagl">${esc(x.lang.toUpperCase())}</span>` : ''}
+    ${owned ? '<span class="tagc">na coleção</span>' : ''}${x.lang === 'pt' ? '<span class="tagl">PT</span>' : ''}
     <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
     <div class="pn">${esc(x.set_name)}</div>
     <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
@@ -727,12 +750,12 @@ function renderPrint() {
   <div class="card">
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
-      <h2>${esc(c.lang !== 'en' && c.printed_name ? c.printed_name : c.name)} ${manaHtml(manaCostOf(c))}${rlHtml(c.reserved)}${langTag(c.lang)}</h2>
-      ${c.lang !== 'en' && c.printed_name ? `<div class="muted" style="margin:-2px 0 6px">${esc(c.name)}</div>` : ''}
+      <h2>${esc(c.lang === 'pt' && c.printed_name ? c.printed_name : c.name)} ${manaHtml(manaCostOf(c))}${rlHtml(c.reserved)}${c.lang === 'pt' ? langTag('pt') : ''}</h2>
+      ${c.lang === 'pt' && c.printed_name ? `<div class="muted" style="margin:-2px 0 6px">${esc(c.name)}</div>` : ''}
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} · ${LANG_PT[c.lang] || c.lang}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
+        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -934,12 +957,13 @@ $('#csv').onclick = () => {
 };
 
 /* ================= Minha coleção ================= */
-let collBasis = 'usd', collRarity = '', collColor = '', collQuery = '', collSet = '';
+let collBasis = 'usd', collRarity = '', collColor = '', collQuery = '', collSet = '', collLang = '';
 let collSort = { key: 'total', dir: -1 };
 const RARITY_ORDER = { mythic: 6, rare: 5, special: 4, bonus: 3, uncommon: 2, common: 1 };
 const COLL_COLS = [
   { key: 'qty', label: 'Qtd', get: o => o.r.quantity, num: true },
   { key: 'name', label: 'Carta', get: o => o.r.name },
+  { key: 'lang', label: 'Idioma', get: o => LANG_PT[o.r.lang] || o.r.lang },
   { key: 'color', label: 'Cor', get: o => o.r.colors == null ? null : colorKey(o.r.colors) * 100 + (num(o.r.cmc) || 0), num: true },
   { key: 'rarity', label: 'Raridade', get: o => RARITY_ORDER[o.r.rarity] ?? null, num: true },
   { key: 'set', label: 'Edição', get: o => (o.r.set_name || '') + ' ' + String(o.r.collector_number || '').padStart(6, '0') },
@@ -979,6 +1003,7 @@ function renderColl() {
   const nq = norm(collQuery);
   const view = coll.filter(r => (!nq || norm(r.name).includes(nq) || norm(r.typed_name).includes(nq))
     && (!collSet || r.set_code === collSet)
+    && (!collLang || (r.lang || 'en') === collLang)
     && (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
     && (!collColor || (collColor === 'M' ? (r.colors || []).length > 1 : collColor === 'C' ? r.colors && !r.colors.length : (r.colors || []).length === 1 && r.colors[0] === collColor)));
   const rows = view.map(r => {
@@ -998,6 +1023,9 @@ function renderColl() {
         <select id="collSet" style="max-width:220px"><option value="">Todas</option>${[...new Map(coll.filter(r => r.set_code).map(r => [r.set_code, r.set_name || r.set_code])).entries()]
           .sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => `<option value="${esc(k)}" ${collSet === k ? 'selected' : ''}>${esc(n)} (${esc(k.toUpperCase())}) · ${coll.filter(r => r.set_code === k).reduce((t, r) => t + r.quantity, 0)}</option>`).join('')}</select>
       </label>
+      <label class="muted">Idioma:
+        <select id="collLang"><option value="">Todos</option>${[...new Set(coll.map(r => r.lang || 'en'))].map(l => `<option value="${l}" ${collLang === l ? 'selected' : ''}>${LANG_PT[l] || l}</option>`).join('')}</select>
+      </label>
       <label class="muted">Raridade:
         <select id="collRar"><option value="">Todas</option>${['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => coll.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('')}${coll.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : ''}</select>
       </label>
@@ -1008,7 +1036,7 @@ function renderColl() {
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
+    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet || collLang ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${fo(totalOrig)} na base ${cur.toUpperCase()}</small></div>
     <div class="panel2" style="padding:${vhOpen ? '12px 14px' : '8px 14px'}">
       <button class="vhtoggle" id="vhToggle" aria-expanded="${vhOpen}"><span class="chev">${vhOpen ? '▾' : '▸'}</span> Valor da coleção ao longo do tempo${!vhOpen && valueHist && valueHist.length ? ` <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">· ${valueHist.length} dia(s) registrados</span>` : ''}</button>
       ${vhOpen ? `<div id="vhBox" style="margin-top:8px">${valueHistHtml()}</div>` : ''}
@@ -1016,11 +1044,12 @@ function renderColl() {
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
       ${collHeaderHtml()}
-      ${rows.length ? '' : '<tr><td colspan="9" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
+      ${rows.length ? '' : '<tr><td colspan="10" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${langTag(r.lang)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
+        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
+        <td>${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
         <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
         <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
@@ -1038,6 +1067,7 @@ function renderColl() {
   $('#collRar').onchange = e => { collRarity = e.target.value; renderColl(); };
   $('#collCor').onchange = e => { collColor = e.target.value; renderColl(); };
   $('#collSet').onchange = e => { collSet = e.target.value; renderColl(); };
+  $('#collLang').onchange = e => { collLang = e.target.value; renderColl(); };
   const qi = $('#collQ');
   qi.oninput = () => {
     clearTimeout(qi._t);
@@ -1064,6 +1094,10 @@ function renderColl() {
     inp.addEventListener('change', commit);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
   });
+  out.querySelectorAll('select[data-lang]').forEach(sel => sel.onchange = async () => {
+    try { await setLang(sel.dataset.lang, sel.value); toast('Idioma: ' + LANG_PT[sel.value]); renderColl(); }
+    catch (e) { toast('Erro: ' + e.message); renderColl(); }
+  });
   out.querySelectorAll('input[data-tn]').forEach(inp => {
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { const r = coll.find(x => x.id === inp.dataset.tn); inp.value = r?.typed_name || ''; inp.blur(); } });
     inp.addEventListener('change', async () => {
@@ -1078,8 +1112,8 @@ function renderColl() {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'nome_digitado', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'nome_digitado', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
@@ -1120,7 +1154,7 @@ async function refreshPrices() {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
-        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, lang: c.lang || 'en', border_color: c.border_color || null, price_from_en: !!c._fromEn })
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, border_color: c.border_color || null, price_from_en: !!c._fromEn })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
