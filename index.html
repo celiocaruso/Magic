@@ -122,7 +122,7 @@
   .phead .chk{font-size:13px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
-  .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
+  .phead input:not([type=checkbox]){background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:12px;max-height:560px;overflow:auto;padding:2px}
   .pcard{background:var(--panel2);border:2px solid transparent;border-radius:10px;padding:6px;text-align:left;color:var(--txt);position:relative;display:flex;flex-direction:column}
   .pcard .pview{cursor:pointer;flex:1;position:relative}
@@ -426,7 +426,7 @@ const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''} 
 const SET_PT = {
   '4ed': 'Quarta Edição', '4bb': 'Quarta Edição (borda preta)', 'ice': 'Era Glacial', 'hml': 'Terras Natais',
   'all': 'Alianças', 'mir': 'Miragem', 'vis': 'Visões', 'wth': 'Alíseos', 'chr': 'Crônicas', 'bchr': 'Crônicas (borda preta)',
-  '5ed': 'Quinta Edição', '6ed': 'Sexta Edição (Clássico)', '7ed': 'Sétima Edição', 'por': 'Portal', 'tmp': 'Tempestade',
+  '5ed': 'Quinta Edição', '6ed': 'Sexta Edição (Clássico)', '7ed': 'Sétima Edição', '8ed': 'Oitava Edição', '9ed': 'Nona Edição', 'por': 'Portal', 'tmp': 'Tempestade',
   'sth': 'Fortaleza', 'exo': 'Êxodo', 'usg': 'Saga de Urza', 'ren': 'Renascença', 'rin': 'Rinascimento', 'itp': 'Introdutório 2 Jogadores',
   'fem': 'Impérios Caídos', 'csp': 'Hálito Glacial'
 };
