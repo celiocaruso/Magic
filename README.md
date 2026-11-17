@@ -11,6 +11,7 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - Edições em inglês e em português na grade (etiqueta PT, cor da borda); impressões em português sem preço próprio usam o preço da mesma carta em inglês (marcado com *).
 - Idioma da carta informado pelo usuário (Inglês, Português…), editável na carta e na coleção; coluna e filtro de idioma. A atualização diária não altera o idioma.
 - Tela de detalhes: clique numa carta (Minha coleção ou Lista) para ver imagem ampliada (com zoom e verso), texto, preços, histórico, dados da impressão, força de jogo e editar quantidade, idioma e nome em português.
+- Ano da sua carta (ex.: ano impresso), escolhido ao adicionar e editável na coleção e nos detalhes; por padrão, o ano da edição.
 - Busca por nome (inglês ou português) e filtro por coleção/edição em Minha coleção.
 - Guarda a raridade (Comum, Incomum, Rara, Mítica…) e se a carta está na Reserved List; filtro por raridade na coleção.
 - Avalia listas coladas (formato de exportação de decks) e soma à coleção.

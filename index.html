@@ -388,6 +388,21 @@ async function setLang(id, lang) {
   const r = coll && coll.find(x => x.id === id); if (r) Object.assign(r, data);
   return data;
 }
+const THIS_YEAR = new Date().getFullYear();
+const edYear = d => d ? +String(d).slice(0, 4) : null;
+// Ano exibido: o informado pelo usuário, senão o da edição
+const yearOf = r => r.user_year || edYear(r.released_at);
+const yearSelect = (cur, edY, attrs) => {
+  let o = `<option value="" ${!cur ? 'selected' : ''}>${edY ? edY + ' (edição)' : '—'}</option>`;
+  for (let y = THIS_YEAR; y >= 1993; y--) if (y !== edY) o += `<option value="${y}" ${+cur === y ? 'selected' : ''}>${y}</option>`;
+  return `<select class="langsel" ${attrs} title="Ano da sua carta (deixe 'edição' se for o mesmo do catálogo)">${o}</select>`;
+};
+async function setYear(id, y) {
+  const { data, error } = await db.from('collection_items').update({ user_year: y ? +y : null, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  if (error) throw error;
+  const r = coll && coll.find(x => x.id === id); if (r) Object.assign(r, data);
+  return data;
+}
 const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
@@ -418,6 +433,7 @@ function itemFromCard(card, finish, typed) {
     price_usd: pr.usd, price_eur: pr.eur,
     rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
     typed_name: typed || null,
+    released_at: card.released_at || null,
     lang: ['en', 'pt'].includes(card.lang) ? card.lang : 'pt', border_color: card.border_color || null, price_from_en: !!card._fromEn,
     mana_cost: manaCostOf(card), cmc: card.cmc ?? null, colors: colorsOf(card), type_line: card.type_line || face0(card).type_line || null,
   };
@@ -585,7 +601,7 @@ async function pick(name) {
   const typedRaw = $('#q').value.trim() || name;
   currentTyped = null;
   $('#q').value = name;
-  lookupAdded = null; pendingQty = 1;
+  lookupAdded = null; pendingQty = 1; pendingLang = null; pendingYear = null;
   $('#cardOut').innerHTML = '<p class="status" style="margin-top:20px">buscando edições…</p>';
   try {
     prints = [];
@@ -640,6 +656,7 @@ async function pick(name) {
 // - carta com VÁRIAS edições: nada entra sozinho; clicar numa edição só mostra (prévia),
 //   e o usuário adiciona com "+ Adicionar" (na grade ou no quadro). Nenhum clique apaga nada.
 let pendingLang = null; // idioma escolhido antes de adicionar (null = automático)
+let pendingYear = null; // ano da carta escolhido antes de adicionar (null = o da edição)
 async function syncCurrent() {
   if (!currentPrint) return;
   colStatus = { row: null, busy: false, err: '' };
@@ -658,9 +675,10 @@ async function addPrint(print, finish, qty = 1) {
   try {
     const item = itemFromCard(print, finish, currentTyped);
     if (isCur && pendingLang) item.lang = pendingLang;
+    if (isCur && pendingYear) item.user_year = +pendingYear;
     const row = await addToColl(item, Math.max(1, qty), true);
     if (isCur) { colStatus.row = row; lookupAdded = row.id; lookupQty = row.quantity; }
-    pendingQty = 1; pendingLang = null;
+    pendingQty = 1; pendingLang = null; pendingYear = null;
     toast(`${row.name} · ${row.set_code.toUpperCase()} #${row.collector_number} adicionada`);
     snapshot(print).catch(() => {});
     return row;
@@ -681,6 +699,7 @@ async function changeSelection(print, finish) {
     }
   }
   lookupAdded = null;
+  if (!currentPrint || print.id !== currentPrint.id) pendingYear = null;
   currentPrint = print; currentFinish = finish;
   renderPrint();
   snapshot(print).catch(() => {});
@@ -710,10 +729,12 @@ function renderColBox() {
     box.innerHTML = `<span class="st">✓ Esta edição está na coleção</span>
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="cbQty" type="number" min="0" step="1" value="${r.quantity}"><button class="mini" data-d="1">+</button> unid.</span>
       <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="cbLang"')}</span>
+      <span style="display:flex;gap:6px;align-items:center">Ano ${yearSelect(r.user_year, edYear(r.released_at || currentPrint.released_at), 'id="cbYear"')}</span>
       <button class="link" id="cbDet">ver detalhes</button>
       <button class="link" id="cbRm">remover da coleção</button>
       ${siblingsHtml(r)}`;
     $('#cbLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); refreshCardView(); } catch (err) { toast('Erro: ' + err.message); } };
+    $('#cbYear').onchange = async e => { try { await setYear(r.id, e.target.value); toast('Ano: ' + (e.target.value || 'o da edição')); refreshCardView(); renderColl(); } catch (err) { toast('Erro: ' + err.message); } };
     const after = q => { if (q < 1) { colStatus.row = null; } lookupAdded = null; refreshCardView(); renderCollBadge(); };
     box.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
       const q = r.quantity + +b.dataset.d;
@@ -738,6 +759,7 @@ function renderColBox() {
       ${multi ? `<span style="width:100%;order:-1;font-size:13px">Esta carta tem ${prints.length} edições/ilustrações. Clique nas imagens abaixo para comparar (use <b>ver detalhes</b> para a imagem ampliada) e adicione as que você tem com <b>+ Adicionar</b>.</span>` : ''}
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"><button class="mini" data-d="1">+</button> unid.</span>
       <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(pendingLang || autoLang, 'id="addLang"')}</span>
+      <span style="display:flex;gap:6px;align-items:center">Ano da minha carta ${yearSelect(pendingYear, edYear(currentPrint.released_at), 'id="addYear"')}</span>
       <button class="primary" id="cbAdd" style="padding:8px 14px">+ Adicionar esta edição</button>
       <button class="link" id="cbDet">ver detalhes</button>
       ${siblingsHtml(null)}`;
@@ -747,6 +769,7 @@ function renderColBox() {
     aq.addEventListener('keydown', e => { if (e.key === 'Enter') aq.blur(); });
     box.querySelectorAll('.mini').forEach(b => b.onclick = () => setP(pendingQty + +b.dataset.d));
     $('#addLang').onchange = e => { pendingLang = e.target.value; };
+    $('#addYear').onchange = e => { pendingYear = e.target.value || null; };
     $('#cbAdd').onclick = () => addPrint(currentPrint, currentFinish, pendingQty);
     $('#cbDet').onclick = () => openDetailsById(currentPrint.id, null, { finish: currentFinish });
   }
@@ -824,7 +847,7 @@ function renderPrint() {
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
+        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); return own && own.user_year && own.user_year !== edYear(c.released_at) ? `${own.user_year} <span class="muted" style="font-weight:400">(edição: ${c.released_at.slice(0, 4)})</span>` : c.released_at.slice(0, 4); })()} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -1002,6 +1025,7 @@ function renderDetails() {
         <span class="st">✓ Na sua coleção</span>
         <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-dd="-1">−</button><input class="qty" id="detQty" type="number" min="0" value="${r.quantity}"><button class="mini" data-dd="1">+</button> unid.</span>
         <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="detLang"')}</span>
+        <span style="display:flex;gap:6px;align-items:center">Ano ${yearSelect(r.user_year, edYear(c.released_at), 'id="detYear"')}</span>
         <span style="display:flex;gap:6px;align-items:center">Acabamento <b>${FINISH_PT[r.finish]}</b></span>
         <span style="display:flex;gap:6px;align-items:center;flex:1;min-width:220px">Nome em português <input id="detTn" class="qty" style="width:auto;flex:1;text-align:left;font-weight:400" value="${esc(r.typed_name || '')}" placeholder="como você conhece a carta"></span>
       </div>` : ''}
@@ -1065,6 +1089,7 @@ function renderDetails() {
     q.onchange = () => setQ(q.value);
     q.onkeydown = e => { if (e.key === 'Enter') q.blur(); };
     $('#detBox').querySelectorAll('[data-dd]').forEach(b => b.onclick = () => setQ(r.quantity + +b.dataset.dd));
+    $('#detYear').onchange = async e => { try { await setYear(r.id, e.target.value); toast('Ano: ' + (e.target.value || 'o da edição')); afterChange(); } catch (err) { toast('Erro: ' + err.message); } };
     $('#detLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); afterChange(); } catch (err) { toast('Erro: ' + err.message); } };
     const tn = $('#detTn');
     tn.onkeydown = e => { if (e.key === 'Enter') tn.blur(); };
@@ -1219,6 +1244,7 @@ const COLL_COLS = [
   { key: 'lang', label: 'Idioma', get: o => LANG_PT[o.r.lang] || o.r.lang },
   { key: 'color', label: 'Cor', get: o => o.r.colors == null ? null : colorKey(o.r.colors) * 100 + (num(o.r.cmc) || 0), num: true },
   { key: 'rarity', label: 'Raridade', get: o => RARITY_ORDER[o.r.rarity] ?? null, num: true },
+  { key: 'year', label: 'Ano', get: o => yearOf(o.r), num: true },
   { key: 'set', label: 'Edição', get: o => (o.r.set_name || '') + ' ' + String(o.r.collector_number || '').padStart(6, '0') },
   { key: 'unit', label: 'Unit.', get: o => o.u, num: true, cls: 'num' },
   { key: 'unitbrl', label: 'Unit. R$', get: o => o.ub, num: true, cls: 'num' },
@@ -1297,7 +1323,7 @@ function renderColl() {
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
     <table>
       ${collHeaderHtml()}
-      ${rows.length ? '' : '<tr><td colspan="10" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
+      ${rows.length ? '' : '<tr><td colspan="11" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
         <td><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt=""><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
@@ -1305,6 +1331,7 @@ function renderColl() {
         <td>${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
         <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
+        <td>${yearSelect(r.user_year, edYear(r.released_at), `data-year="${r.id}"`)}</td>
         <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
         <td class="num muted">${fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
         <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
@@ -1357,6 +1384,10 @@ function renderColl() {
   out.querySelectorAll('[data-det]').forEach(el => el.onclick = () => {
     const r = coll.find(x => x.id === el.dataset.det); if (r) openDetailsById(r.scryfall_id, r);
   });
+  out.querySelectorAll('select[data-year]').forEach(sel => sel.onchange = async () => {
+    try { await setYear(sel.dataset.year, sel.value); toast('Ano: ' + (sel.value || 'o da edição')); renderColl(); }
+    catch (e) { toast('Erro: ' + e.message); renderColl(); }
+  });
   out.querySelectorAll('select[data-lang]').forEach(sel => sel.onchange = async () => {
     try { await setLang(sel.dataset.lang, sel.value); toast('Idioma: ' + LANG_PT[sel.value]); renderColl(); }
     catch (e) { toast('Erro: ' + e.message); renderColl(); }
@@ -1375,8 +1406,8 @@ function renderColl() {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
   $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
-    ['qtd', 'carta', 'nome_digitado', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    ['qtd', 'carta', 'nome_digitado', 'ano_carta', 'ano_edicao', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), yearOf(r) || '', edYear(r.released_at) || '', LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
@@ -1417,7 +1448,7 @@ async function refreshPrices() {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
-        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, border_color: c.border_color || null, price_from_en: !!c._fromEn })
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, border_color: c.border_color || null, price_from_en: !!c._fromEn, released_at: c.released_at || null })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
