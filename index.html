@@ -88,6 +88,8 @@
   h2 .mana img{width:20px;height:20px}
   .mana .sep{color:var(--muted);margin:0 3px;font-size:12px}
   .cor{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
+  .lang{display:inline-block;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;vertical-align:middle;margin-left:6px}
+  .pcard .tagl{position:absolute;top:10px;right:10px;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -330,6 +332,21 @@ function manaHtml(cost) {
       return `<img src="https://svgs.scryfall.io/card-symbols/${encodeURIComponent(k)}.svg" alt="${esc(sym)}" loading="lazy">`;
     }).join('')).join('<span class="sep">//</span>') + '</span>';
 }
+const LANG_PT = { en: 'Inglês', pt: 'Português', es: 'Espanhol', fr: 'Francês', de: 'Alemão', it: 'Italiano', ja: 'Japonês' };
+const BORDER_PT = { black: 'borda preta', white: 'borda branca', borderless: 'sem borda', silver: 'borda prateada', gold: 'borda dourada' };
+const hasPrice = c => Object.values(c.prices || {}).some(v => v != null);
+// Impressões em outro idioma quase nunca têm preço no Scryfall: usa o da mesma carta em inglês (mesma edição e número)
+function borrowEnPrices(list, extraEn = []) {
+  const en = new Map([...list, ...extraEn].filter(c => c.lang === 'en').map(c => [c.set + '|' + c.collector_number, c]));
+  for (const c of list) {
+    if (c.lang !== 'en' && !hasPrice(c)) {
+      const e = en.get(c.set + '|' + c.collector_number);
+      if (e) { c.prices = { ...e.prices }; c._fromEn = true; }
+    }
+  }
+  return list;
+}
+const langTag = l => l && l !== 'en' ? `<span class="lang" title="${LANG_PT[l] || l}">${esc(String(l).toUpperCase())}</span>` : '';
 const FINISH_PT = { nonfoil: 'Normal', foil: 'Foil', etched: 'Etched' };
 function priceFor(card, finish) {
   const p = card.prices || {};
@@ -359,6 +376,7 @@ function itemFromCard(card, finish, typed) {
     price_usd: pr.usd, price_eur: pr.eur,
     rarity: RARITY_PT[card.rarity] ? card.rarity : null, reserved: !!card.reserved,
     typed_name: typed || null,
+    lang: card.lang || 'en', border_color: card.border_color || null, price_from_en: !!card._fromEn,
     mana_cost: manaCostOf(card), cmc: card.cmc ?? null, colors: colorsOf(card), type_line: card.type_line || face0(card).type_line || null,
   };
 }
@@ -537,10 +555,11 @@ async function pick(name) {
       name = f[0].name; $('#q').value = name;
     }
     currentTyped = foreignTyped(typedRaw, name);
-    let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent('!"' + name + '" game:paper'));
+    let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent('!"' + name + '" game:paper (lang:en or lang:pt)'));
     prints.push(...page.data);
     let guard = 0;
-    while (page.has_more && guard++ < 5) { page = await sf(page.next_page); prints.push(...page.data); }
+    while (page.has_more && guard++ < 8) { page = await sf(page.next_page); prints.push(...page.data); }
+    borrowEnPrices(prints);
     if (db && user && !coll) await loadColl();
     const owned = coll ? prints.find(p => coll.some(r => r.scryfall_id === p.id)) : null;
     if (owned) {
@@ -666,14 +685,14 @@ function printCardHtml(x, i) {
   const foilOnly = x.prices.usd == null && usd != null;
   const owned = coll && coll.some(r => r.scryfall_id === x.id);
   const art = x.artist ? ' · ' + x.artist : '';
-  const tags = [x.frame_effects?.includes('showcase') && 'showcase', x.border_color === 'borderless' && 'sem borda', x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
-  const key = (x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags).toLowerCase();
+  const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
+  const key = norm(x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || ''));
   return `<button class="pcard ${x.id === currentPrint.id && !awaitingChoice ? 'sel' : ''}" data-i="${i}" data-k="${esc(key)}" title="${esc(x.set_name + art)}">
-    ${owned ? '<span class="tagc">na coleção</span>' : ''}
+    ${owned ? '<span class="tagc">na coleção</span>' : ''}${x.lang !== 'en' ? `<span class="tagl">${esc(x.lang.toUpperCase())}</span>` : ''}
     <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
     <div class="pn">${esc(x.set_name)}</div>
     <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
-    <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') : '<span class="muted">sem preço</span>'}</div>
+    <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
   </button>`;
 }
 
@@ -705,11 +724,12 @@ function renderPrint() {
   <div class="card">
     <div><img src="${img(c).normal || ''}" alt="${esc(c.name)}"></div>
     <div>
-      <h2>${esc(c.name)} ${manaHtml(manaCostOf(c))}${rlHtml(c.reserved)}</h2>
+      <h2>${esc(c.lang !== 'en' && c.printed_name ? c.printed_name : c.name)} ${manaHtml(manaCostOf(c))}${rlHtml(c.reserved)}${langTag(c.lang)}</h2>
+      ${c.lang !== 'en' && c.printed_name ? `<div class="muted" style="margin:-2px 0 6px">${esc(c.name)}</div>` : ''}
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)}</b></span>
+        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} · ${LANG_PT[c.lang] || c.lang}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -717,7 +737,7 @@ function renderPrint() {
         ${rows.map(r => `<tr ${r[0] === currentFinish ? 'style="background:var(--panel2)"' : ''}><td>${FINISH_PT[r[0]]}${r[0] === currentFinish ? ' ◂' : ''}</td>
           <td class="num">${fUSD(r[1])}</td><td class="num brl">${fBRL(toBRL(r[1], 'usd'))}</td>
           <td class="num">${fEUR(r[2])}</td><td class="num brl">${fBRL(toBRL(r[2], 'eur'))}</td></tr>`).join('')}
-      </table>` : '<p class="warn">Sem preço registrado para esta edição.</p>'}
+      </table>${c._fromEn ? `<div class="muted" style="font-size:12px;margin-top:6px">* Impressão em ${LANG_PT[c.lang] || c.lang}: o Scryfall não tem preço próprio, então uso o preço da mesma carta em inglês. Confira o preço Brasil na LigaMagic.</div>` : ''}` : '<p class="warn">Sem preço registrado para esta edição.</p>'}
       <div class="colbox" id="colBox"></div>
       <div class="panel2" id="histBox"><h4>Histórico de preço desta edição</h4><span class="muted">carregando…</span></div>
       ${strengthHtml(c)}
@@ -749,7 +769,7 @@ function renderPrint() {
       changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np));
     });
     const applyFilter = () => {
-      const q = $('#pfilter').value.trim().toLowerCase();
+      const q = norm($('#pfilter').value);
       grid.querySelectorAll('.pcard').forEach(b => b.style.display = !q || b.dataset.k.includes(q) ? '' : 'none');
     };
     $('#pfilter').oninput = applyFilter;
@@ -993,7 +1013,7 @@ function renderColl() {
       ${rows.length ? '' : '<tr><td colspan="9" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb }) => `<tr>
         <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
+        <td><img class="thumb" src="${esc(r.image_url || '')}" alt="">${esc(r.name)}${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}${langTag(r.lang)}${r.price_from_en ? ' <span class="muted" title="preço da versão em inglês">*</span>' : ''}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
         <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
         <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
@@ -1083,13 +1103,16 @@ async function refreshPrices() {
   try {
     const ids = [...new Set(coll.map(r => r.scryfall_id))].map(id => ({ id }));
     const { found } = await fetchCollection(ids, (a, b) => $('#collStatus').textContent = `consultando ${a}/${b}…`);
+    const needEn = found.filter(c => c.lang !== 'en' && !hasPrice(c));
+    const enCards = needEn.length ? (await fetchCollection(needEn.map(c => ({ set: c.set, collector_number: c.collector_number })))).found : [];
+    borrowEnPrices(found, enCards);
     const byId = new Map(found.map(c => [c.id, c]));
     let n = 0;
     for (const r of coll) {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
-        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null })
+        .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, lang: c.lang || 'en', border_color: c.border_color || null, price_from_en: !!c._fromEn })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
       $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
