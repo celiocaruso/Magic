@@ -15,7 +15,7 @@ App web (uma página, sem build) para avaliar o **preço de mercado** de cartas 
 - Guarda a raridade (Comum, Incomum, Rara, Mítica…) e se a carta está na Reserved List; filtro por raridade na coleção.
 - Avalia listas coladas (formato de exportação de decks) e soma à coleção.
 - Aba "Minha coleção": valor total, ajuste de quantidade, atualização de preços, exportação CSV.
-- Quando a carta tem várias edições, mostra todas (com a ilustração) para o usuário marcar qual é a dele; só então entra na coleção.
+- Quando a carta tem várias edições, mostra todas: clicar na imagem só mostra a edição (prévia); "+ Adicionar" guarda (várias edições podem ser adicionadas); 🔍 abre os detalhes. Carta com edição única entra automaticamente. Nenhum clique apaga nada.
 - Força de jogo: ranking de popularidade no Commander (EDHREC), Penny Dreadful e legalidade por formato.
 - Histórico de preço por edição e do valor total da coleção (gráficos).
 - Atualização diária automática: o pg_cron chama a Edge Function `refresh-prices` às 07:17 (Brasília), que reavalia todas as cartas de todas as coleções e grava `price_snapshots` e `collection_value_history`.

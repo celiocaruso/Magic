@@ -89,7 +89,7 @@
   .mana .sep{color:var(--muted);margin:0 3px;font-size:12px}
   .cor{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
   .lang{display:inline-block;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;vertical-align:middle;margin-left:6px}
-  .pcard .tagl{position:absolute;top:10px;right:10px;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
+  .pcard .tagl{position:absolute;top:4px;right:4px;background:#1f6f3f;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px}
   .vhtoggle{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:flex;gap:6px;align-items:center;width:100%;text-align:left}
   .vhtoggle:hover{color:var(--txt)}
   .vhtoggle .chev{font-size:12px;width:12px}
@@ -118,7 +118,14 @@
   .phead h3{margin:0;font-size:16px}
   .phead input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:12px;max-height:560px;overflow:auto;padding:2px}
-  .pcard{background:var(--panel2);border:2px solid transparent;border-radius:10px;padding:6px;cursor:pointer;text-align:left;color:var(--txt);position:relative}
+  .pcard{background:var(--panel2);border:2px solid transparent;border-radius:10px;padding:6px;text-align:left;color:var(--txt);position:relative;display:flex;flex-direction:column}
+  .pcard .pview{cursor:pointer;flex:1;position:relative}
+  .pcard.owned{border-color:#3d7a51}
+  .pact{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .pact .gadd{flex:1;background:none;border:1px dashed var(--accent);color:var(--accent);border-radius:6px;padding:4px 6px;font-size:12px;font-weight:600;cursor:pointer}
+  .pact .gadd:hover{background:rgba(224,168,75,.12)}
+  .pact .gq{flex:1;text-align:center;color:var(--ok);font-weight:700;font-size:13px}
+  .pact .gdet{background:none;border:1px solid var(--line);color:var(--txt);border-radius:6px;width:28px;height:26px;cursor:pointer;font-size:12px}
   .pcard:hover{border-color:var(--line)}
   .pcard.sel{border-color:var(--accent)}
   .pcard img{width:100%;border-radius:6px;aspect-ratio:488/680;object-fit:cover;background:#111;display:block}
@@ -628,6 +635,11 @@ async function pick(name) {
 }
 
 // Garante que a impressão/acabamento atual esteja na coleção (se a opção estiver marcada)
+// Regras da coleção na tela "Carta":
+// - carta com UMA edição: entra sozinha (se "Carta da coleção" estiver marcada);
+// - carta com VÁRIAS edições: nada entra sozinho; clicar numa edição só mostra (prévia),
+//   e o usuário adiciona com "+ Adicionar" (na grade ou no quadro). Nenhum clique apaga nada.
+let pendingLang = null; // idioma escolhido antes de adicionar (null = automático)
 async function syncCurrent() {
   if (!currentPrint) return;
   colStatus = { row: null, busy: false, err: '' };
@@ -635,30 +647,51 @@ async function syncCurrent() {
   if (!coll) await loadColl();
   const existing = findRow(currentPrint.id, currentFinish);
   if (existing) { colStatus.row = existing; renderColBox(); return; }
-  if (!$('#autoAdd').checked || awaitingChoice) { renderColBox(); return; }
-  colStatus.busy = true; renderColBox();
-  try {
-    const row = await addToColl(itemFromCard(currentPrint, currentFinish, currentTyped), pendingQty, true);
-    lookupAdded = row.id; lookupQty = row.quantity; colStatus.row = row; pendingQty = 1;
-    toast(`${row.name} adicionada à coleção`);
-  } catch (e) { colStatus.err = e.message; }
-  colStatus.busy = false; renderColBox(); renderCollBadge();
+  if (!$('#autoAdd').checked || prints.length !== 1) { renderColBox(); return; }
+  await addPrint(currentPrint, currentFinish, pendingQty);
 }
 
-// Ao trocar edição/acabamento: desfaz o que ESTA consulta adicionou e adiciona a nova escolha
-// Trocar de EDIÇÃO adiciona a nova e mantém as anteriores (você pode ter várias edições).
-// Trocar só o ACABAMENTO (normal/foil) da mesma impressão corrige o que esta consulta acabou de adicionar.
+async function addPrint(print, finish, qty = 1) {
+  if (!db || !user) { openAuth(); return null; }
+  const isCur = currentPrint && print.id === currentPrint.id && finish === currentFinish;
+  if (isCur) { colStatus.busy = true; renderColBox(); }
+  try {
+    const item = itemFromCard(print, finish, currentTyped);
+    if (isCur && pendingLang) item.lang = pendingLang;
+    const row = await addToColl(item, Math.max(1, qty), true);
+    if (isCur) { colStatus.row = row; lookupAdded = row.id; lookupQty = row.quantity; }
+    pendingQty = 1; pendingLang = null;
+    toast(`${row.name} · ${row.set_code.toUpperCase()} #${row.collector_number} adicionada`);
+    snapshot(print).catch(() => {});
+    return row;
+  } catch (e) { if (isCur) colStatus.err = e.message; else toast('Erro: ' + e.message); return null; }
+  finally { if (isCur) colStatus.busy = false; refreshCardView(); renderCollBadge(); }
+}
+
+// Re-renderiza quadro + grade sem perder a rolagem
+function refreshCardView() { if (currentPrint) renderPrint(); }
+
+// Clicar numa edição = ver (prévia). Trocar o ACABAMENTO logo após adicionar corrige o que acabou de entrar.
 async function changeSelection(print, finish) {
-  const sameFix = currentPrint && print.id === currentPrint.id;
+  const sameFix = currentPrint && print.id === currentPrint.id && finish !== currentFinish;
   if (sameFix && lookupAdded && user) {
     const r = coll && coll.find(x => x.id === lookupAdded);
-    if (r && r.quantity === lookupQty) { try { await removeRow(lookupAdded); } catch {} }
-    lookupAdded = null;
+    if (r && r.quantity === lookupQty) {
+      try { await removeRow(lookupAdded); currentPrint = print; currentFinish = finish; lookupAdded = null; await addPrint(print, finish, r.quantity); return; } catch {}
+    }
   }
+  lookupAdded = null;
   currentPrint = print; currentFinish = finish;
   renderPrint();
   snapshot(print).catch(() => {});
   syncCurrent();
+}
+
+function siblingsHtml(r) {
+  const c = currentPrint;
+  const sib = coll ? coll.filter(x => (x.oracle_id && x.oracle_id === c.oracle_id) || x.name === c.name) : [];
+  if (!sib.length) return '';
+  return `<span class="muted" style="width:100%;order:9;font-size:12px">Na sua coleção: ${sib.length} versão(ões), ${sib.reduce((t, x) => t + x.quantity, 0)} unid. — ${sib.map(x => esc(x.set_code.toUpperCase() + ' #' + x.collector_number + (x.finish !== 'nonfoil' ? ' ' + FINISH_PT[x.finish] : '') + (x.lang !== 'en' ? ' ' + x.lang.toUpperCase() : '') + ' ×' + x.quantity)).join(' · ')}</span>`;
 }
 
 function renderColBox() {
@@ -669,53 +702,53 @@ function renderColBox() {
     box.innerHTML = `<span class="muted">Entre para guardar esta carta na sua coleção.</span><button class="ghost" id="cbIn">Entrar</button>`;
     $('#cbIn').onclick = openAuth; return;
   }
-  if (awaitingChoice && !colStatus.row) {
-    box.className = 'colbox ask';
-    box.innerHTML = `<span class="st">Qual é a sua?</span><span>Esta carta tem ${prints.length} edições/ilustrações. ${$('#autoAdd').checked ? 'Marque a sua abaixo para adicioná-la à coleção.' : 'Marque abaixo para ver o preço exato.'}</span>
-      ${$('#autoAdd').checked ? `<span style="display:flex;gap:6px;align-items:center;margin-left:auto">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="askQty" type="number" min="1" step="1" value="${pendingQty}"><button class="mini" data-d="1">+</button> unid.</span>` : ''}`;
-    const aq = $('#askQty');
-    if (aq) {
-      const setP = v => { pendingQty = Math.max(1, Math.floor(Number(v)) || 1); aq.value = pendingQty; };
-      aq.addEventListener('change', () => setP(aq.value));
-      aq.addEventListener('keydown', e => { if (e.key === 'Enter') aq.blur(); });
-      box.querySelectorAll('.mini').forEach(b => b.onclick = () => setP(pendingQty + +b.dataset.d));
-    }
-    return;
-  }
   if (colStatus.busy) { box.className = 'colbox'; box.innerHTML = '<span class="muted">salvando na coleção…</span>'; return; }
   if (colStatus.err) { box.className = 'colbox'; box.innerHTML = `<span class="warn" style="margin:0">Não salvou: ${esc(colStatus.err)}</span>`; return; }
   const r = colStatus.row && coll && coll.find(x => x.id === colStatus.row.id);
   if (r) {
     box.className = 'colbox in';
-    const sib = coll.filter(x => x.oracle_id && x.oracle_id === r.oracle_id);
-    box.innerHTML = `<span class="st">✓ Na coleção</span>${sib.length > 1 ? `<span class="muted" style="width:100%;order:9;font-size:12px">Você tem ${sib.length} versões desta carta (${sib.reduce((t, x) => t + x.quantity, 0)} unid.): ${sib.map(x => esc(x.set_code.toUpperCase() + ' #' + x.collector_number + (x.finish !== 'nonfoil' ? ' ' + FINISH_PT[x.finish] : ''))).join(', ')}. Clique em outra edição abaixo para adicioná-la também.</span>` : '<span class="muted" style="width:100%;order:9;font-size:12px">Tem outra edição desta carta? Clique nela na grade abaixo para adicioná-la também.</span>'}
+    box.innerHTML = `<span class="st">✓ Esta edição está na coleção</span>
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="cbQty" type="number" min="0" step="1" value="${r.quantity}"><button class="mini" data-d="1">+</button> unid.</span>
       <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(r.lang, 'id="cbLang"')}</span>
-      <button class="link" id="cbRm">remover da coleção</button>`;
-    $('#cbLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); renderPrint(); } catch (err) { toast('Erro: ' + err.message); } };
+      <button class="link" id="cbDet">ver detalhes</button>
+      <button class="link" id="cbRm">remover da coleção</button>
+      ${siblingsHtml(r)}`;
+    $('#cbLang').onchange = async e => { try { await setLang(r.id, e.target.value); toast('Idioma: ' + LANG_PT[e.target.value]); refreshCardView(); } catch (err) { toast('Erro: ' + err.message); } };
+    const after = q => { if (q < 1) { colStatus.row = null; } lookupAdded = null; refreshCardView(); renderCollBadge(); };
     box.querySelectorAll('.mini').forEach(b => b.onclick = async () => {
-      try { await setQty(r.id, r.quantity + +b.dataset.d); if (r.quantity + +b.dataset.d < 1) { colStatus.row = null; lookupAdded = null; } renderColBox(); renderCollBadge(); }
-      catch (e) { toast('Erro: ' + e.message); }
+      const q = r.quantity + +b.dataset.d;
+      try { await setQty(r.id, q); after(q); } catch (e) { toast('Erro: ' + e.message); }
     });
     $('#cbQty').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
     $('#cbQty').addEventListener('change', async e => {
       const q = Math.max(0, Math.floor(Number(e.target.value)));
       if (isNaN(q) || e.target.value === '') { e.target.value = r.quantity; return; }
-      try { await setQty(r.id, q); if (q < 1) { colStatus.row = null; lookupAdded = null; } else lookupAdded = null; renderColBox(); renderCollBadge(); }
-      catch (err) { toast('Erro: ' + err.message); e.target.value = r.quantity; }
+      try { await setQty(r.id, q); after(q); } catch (err) { toast('Erro: ' + err.message); e.target.value = r.quantity; }
     });
+    $('#cbDet').onclick = () => openDetailsById(r.scryfall_id, r);
     $('#cbRm').onclick = async () => {
-      try { await removeRow(r.id); colStatus.row = null; lookupAdded = null; renderColBox(); renderCollBadge(); toast('Removida da coleção'); }
+      try { await removeRow(r.id); colStatus.row = null; lookupAdded = null; refreshCardView(); renderCollBadge(); toast('Removida da coleção'); }
       catch (e) { toast('Erro: ' + e.message); }
     };
   } else {
-    box.className = 'colbox';
-    box.innerHTML = `<span class="muted">Fora da coleção.</span><span style="display:flex;gap:6px;align-items:center">Tenho <input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"> unid.</span><button class="ghost" id="cbAdd">Adicionar</button>`;
-    $('#addQty').addEventListener('change', e => { pendingQty = Math.max(1, Math.floor(Number(e.target.value)) || 1); e.target.value = pendingQty; });
-    $('#cbAdd').onclick = async () => {
-      try { const row = await addToColl(itemFromCard(currentPrint, currentFinish, currentTyped), pendingQty, true); colStatus.row = row; renderColBox(); renderCollBadge(); }
-      catch (e) { toast('Erro: ' + e.message); }
-    };
+    const multi = prints.length > 1;
+    const autoLang = ['en', 'pt'].includes(currentPrint.lang) ? currentPrint.lang : 'pt';
+    box.className = 'colbox' + (multi ? ' ask' : '');
+    box.innerHTML = `<span class="st">${multi ? 'É esta a sua?' : 'Fora da coleção'}</span>
+      ${multi ? `<span style="width:100%;order:-1;font-size:13px">Esta carta tem ${prints.length} edições/ilustrações. Clique nas imagens abaixo para comparar (use <b>ver detalhes</b> para a imagem ampliada) e adicione as que você tem com <b>+ Adicionar</b>.</span>` : ''}
+      <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"><button class="mini" data-d="1">+</button> unid.</span>
+      <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(pendingLang || autoLang, 'id="addLang"')}</span>
+      <button class="primary" id="cbAdd" style="padding:8px 14px">+ Adicionar esta edição</button>
+      <button class="link" id="cbDet">ver detalhes</button>
+      ${siblingsHtml(null)}`;
+    const aq = $('#addQty');
+    const setP = v => { pendingQty = Math.max(1, Math.floor(Number(v)) || 1); aq.value = pendingQty; };
+    aq.addEventListener('change', () => setP(aq.value));
+    aq.addEventListener('keydown', e => { if (e.key === 'Enter') aq.blur(); });
+    box.querySelectorAll('.mini').forEach(b => b.onclick = () => setP(pendingQty + +b.dataset.d));
+    $('#addLang').onchange = e => { pendingLang = e.target.value; };
+    $('#cbAdd').onclick = () => addPrint(currentPrint, currentFinish, pendingQty);
+    $('#cbDet').onclick = () => openDetailsById(currentPrint.id, null, { finish: currentFinish });
   }
 }
 
@@ -736,17 +769,26 @@ function strengthHtml(c) {
 function printCardHtml(x, i) {
   const usd = num(x.prices.usd) ?? num(x.prices.usd_foil) ?? num(x.prices.usd_etched);
   const foilOnly = x.prices.usd == null && usd != null;
-  const owned = coll && coll.some(r => r.scryfall_id === x.id);
+  const rows = coll ? coll.filter(r => r.scryfall_id === x.id) : [];
+  const qty = rows.reduce((t, r) => t + r.quantity, 0);
   const art = x.artist ? ' · ' + x.artist : '';
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
-  const key = norm(x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || ''));
-  return `<button class="pcard ${x.id === currentPrint.id && !awaitingChoice ? 'sel' : ''}" data-i="${i}" data-k="${esc(key)}" title="${esc(x.set_name + art)}">
-    ${owned ? '<span class="tagc">na coleção</span>' : ''}${x.lang === 'pt' ? '<span class="tagl">PT</span>' : ''}
-    <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
-    <div class="pn">${esc(x.set_name)}</div>
-    <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
-    <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
-  </button>`;
+  const key = norm(x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : ''));
+  const sel = x.id === currentPrint.id;
+  return `<div class="pcard ${sel ? 'sel' : ''} ${qty ? 'owned' : ''}" data-i="${i}" data-k="${esc(key)}">
+    <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
+      ${x.lang === 'pt' ? '<span class="tagl">PT</span>' : ''}
+      <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
+      <div class="pn">${esc(x.set_name)}</div>
+      <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
+      <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
+    </div>
+    <div class="pact">
+      ${qty ? `<button class="mini" data-gq="-1" title="Tirar uma">−</button><span class="gq">✓ ${qty}</span><button class="mini" data-gq="1" title="Mais uma">+</button>`
+            : `<button class="gadd" data-gadd="1">+ Adicionar</button>`}
+      <button class="gdet" data-gdet="1" title="Ver detalhes / imagem ampliada">🔍</button>
+    </div>
+  </div>`;
 }
 
 function renderPrint() {
@@ -782,7 +824,7 @@ function renderPrint() {
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${awaitingChoice ? 'Mostrando:' : 'Sua edição:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
+        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${esc(c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${c.released_at.slice(0, 4)} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -806,7 +848,7 @@ function renderPrint() {
   </div>
   ${prints.length > 1 ? `
   <div class="phead">
-    <h3>${awaitingChoice ? '👉 ' : ''}Edições e ilustrações (${prints.length})</h3>
+    <h3>Edições e ilustrações (${prints.length}) <span class="muted" style="font-size:12px;font-weight:400">· clique na imagem para ver · <b style="color:var(--accent)">+ Adicionar</b> para guardar · 🔍 detalhes</span></h3>
     <input id="pfilter" placeholder="filtrar por coleção, ano, artista…" value="${esc(prevFilter)}">
   </div>
   <div class="pgrid" id="pgrid">${prints.map(printCardHtml).join('')}</div>` : ''}`;
@@ -816,10 +858,24 @@ function renderPrint() {
   const grid = $('#pgrid');
   if (grid) {
     grid.scrollTop = prevScroll;
-    grid.querySelectorAll('.pcard').forEach(b => b.onclick = () => {
-      const np = prints[+b.dataset.i];
-      awaitingChoice = false;
-      changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np));
+    grid.querySelectorAll('.pcard').forEach(card => {
+      const np = prints[+card.dataset.i];
+      const view = () => { awaitingChoice = false; changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np)); };
+      const pv = card.querySelector('.pview');
+      pv.onclick = view;
+      pv.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); view(); } };
+      const add = card.querySelector('[data-gadd]');
+      if (add) add.onclick = () => addPrint(np, defaultFinish(np), 1);
+      card.querySelectorAll('[data-gq]').forEach(b => b.onclick = async () => {
+        const rows = coll.filter(r => r.scryfall_id === np.id);
+        const r = rows.find(x => x.finish === defaultFinish(np)) || rows[0]; if (!r) return;
+        try { await setQty(r.id, r.quantity + +b.dataset.gq); if (colStatus.row && colStatus.row.id === r.id && r.quantity + +b.dataset.gq < 1) colStatus.row = null; refreshCardView(); renderCollBadge(); }
+        catch (e) { toast('Erro: ' + e.message); }
+      });
+      card.querySelector('[data-gdet]').onclick = () => {
+        const r = coll && coll.find(x => x.scryfall_id === np.id);
+        openDetailsById(np.id, r || null, { finish: r ? r.finish : defaultFinish(np) });
+      };
     });
     const applyFilter = () => {
       const q = norm($('#pfilter').value);
