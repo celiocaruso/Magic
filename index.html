@@ -260,7 +260,7 @@
 
 <footer>
   Dados de cartas e preços: <a href="https://scryfall.com">Scryfall</a> (preços de TCGplayer e Cardmarket, atualizados 1x/dia). Câmbio: AwesomeAPI (cotação comercial, Brasil), com reserva no BCE via Frankfurter. Valores em R$ são conversão direta do preço internacional, não o preço do mercado brasileiro.
-  Conteúdo de Magic: The Gathering © Wizards of the Coast. Projeto de fã, sem vínculo com a Wizards.
+  Versão <span id="appVer"></span>. Conteúdo de Magic: The Gathering © Wizards of the Coast. Projeto de fã, sem vínculo com a Wizards.
 </footer>
 
 <script>
@@ -1594,8 +1594,28 @@ async function refreshPrices() {
   } catch (e) { $('#collStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`; btn.disabled = false; }
 }
 
+/* ================= Versão do app: avisa quando há versão nova publicada ================= */
+const APP_VERSION = '2026-11-17.3';
+async function checkVersion() {
+  try {
+    const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
+    const m = t.match(/const APP_VERSION = '([^']+)'/);
+    if (m && m[1] !== APP_VERSION && !$('#newVer')) {
+      const b = document.createElement('div');
+      b.id = 'newVer';
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:70;background:var(--accent);color:#1a1205;padding:10px 16px;font-weight:600;text-align:center;cursor:pointer';
+      b.textContent = 'Há uma versão nova do app — clique aqui para atualizar';
+      b.onclick = () => location.reload();
+      document.body.appendChild(b);
+    }
+  } catch {}
+}
+checkVersion();
+setInterval(checkVersion, 5 * 60 * 1000);
+
 /* ================= Início ================= */
 renderUser();
+$('#appVer').textContent = APP_VERSION;
 renderColl();
 loadRates();
 $('#q').focus();
