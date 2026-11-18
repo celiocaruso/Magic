@@ -4,12 +4,44 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Magic · Avaliador de cartas MTG</title>
+<meta name="theme-color" content="#0f1115">
+<script>
+(function(){
+  var mq = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
+  function pref(){ try { return localStorage.getItem('magic.theme') || 'dark'; } catch(e) { return 'dark'; } }
+  window.applyTheme = function(t){
+    var eff = t === 'auto' ? (mq && mq.matches ? 'light' : 'dark') : t;
+    document.documentElement.setAttribute('data-theme', eff);
+    var m = document.querySelector('meta[name=theme-color]'); if (m) m.content = eff === 'light' ? '#f3f4f7' : '#0f1115';
+    document.querySelectorAll('.theme button').forEach(function(b){ b.classList.toggle('on', b.dataset.th === t); });
+  };
+  window.setTheme = function(t){ try { localStorage.setItem('magic.theme', t); } catch(e) {} applyTheme(t); };
+  applyTheme(pref());
+  if (mq && mq.addEventListener) mq.addEventListener('change', function(){ if (pref() === 'auto') applyTheme('auto'); });
+  document.addEventListener('DOMContentLoaded', function(){ applyTheme(pref()); });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
-    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
-    --txt:#e8e9ec; --muted:#9aa0ab; --accent:#e0a84b; --ok:#5fbf7f; --bad:#e06464;
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --hover:#2b303b;
+    --txt:#e8e9ec; --muted:#9aa0ab; --accent:#e0a84b; --ink:#1a1205; --ok:#5fbf7f; --bad:#e06464;
+    --shadow:rgba(0,0,0,.5); --seticon:invert(1) opacity(.85);
+    --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa0ab' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --r-common:#b9bcc4; --r-uncommon:#9fc3d6; --r-rare:#e0c060; --r-mythic:#f07a3a; --r-special:#c58cf0;
+    --src-bg:#2a2f3a; --src-ct-bg:#1d4f6b; --src-ct:#cfe9f7; --src-few-bg:#6b4a1d; --src-few:#ffe2b8;
+    color-scheme:dark;
   }
+  :root[data-theme=light]{
+    --bg:#f3f4f7; --panel:#ffffff; --panel2:#f1f3f6; --line:#dcdfe5; --hover:#e7eaef;
+    --txt:#1b1f27; --muted:#5f6775; --accent:#b8761a; --ink:#ffffff; --ok:#2e8a4f; --bad:#c23b31;
+    --shadow:rgba(20,25,35,.18); --seticon:opacity(.8);
+    --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6775' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --r-common:#6b7280; --r-uncommon:#3b7896; --r-rare:#9c7a0e; --r-mythic:#c4511b; --r-special:#8a4fc0;
+    --src-bg:#e6e9ee; --src-ct-bg:#d5ebf7; --src-ct:#1d4f6b; --src-few-bg:#fbe7c8; --src-few:#7a4f12;
+    color-scheme:light;
+  }
+  body,header,.pane,.tab,.dbox,.modal .box,.pcard,.dsec,.panel2{transition:background-color .2s,border-color .2s,color .2s}
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
   a{color:inherit}
@@ -33,15 +65,20 @@
   input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
   .sugg{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;max-height:320px;overflow:auto;z-index:10;display:none}
   .sugg div{padding:9px 14px;cursor:pointer}
-  .sugg div:hover,.sugg div.hl{background:#2b303b}
+  .sugg div:hover,.sugg div.hl{background:var(--hover)}
   .chk{display:flex;gap:7px;align-items:center;font-size:14px;cursor:pointer;user-select:none}
   .chk input{width:17px;height:17px;accent-color:var(--accent)}
   .card{display:grid;grid-template-columns:260px 1fr;gap:24px;margin-top:22px}
   @media (max-width:720px){.card{grid-template-columns:1fr}}
-  .card img{width:100%;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  .card img{width:100%;border-radius:12px;box-shadow:0 6px 24px var(--shadow)}
   .card h2{margin:0 0 4px;font-size:22px}
   .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
-  select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-size:14px;max-width:100%}
+  select{-webkit-appearance:none;-moz-appearance:none;appearance:none;background:var(--panel2) var(--chev) no-repeat right 10px center/11px 8px;border:1px solid var(--line);color:var(--txt);padding:8px 30px 8px 11px;border-radius:8px;font-size:14px;max-width:100%;box-shadow:none;cursor:pointer;line-height:1.25;font-family:inherit}
+  select:hover{border-color:var(--muted)}
+  select::-ms-expand{display:none}
+  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],input:not([type]),textarea{-webkit-appearance:none;appearance:none;box-shadow:none}
+  input[type=number]{-moz-appearance:textfield}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
   table{border-collapse:collapse;width:100%;margin-top:14px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:middle}
   th{color:var(--muted);font-weight:500;font-size:13px}
@@ -59,7 +96,7 @@
   textarea{width:100%;min-height:180px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
   .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}
   button{font-family:inherit}
-  button.primary{background:var(--accent);color:#1a1205;border:none;padding:11px 20px;border-radius:8px;font-weight:650;cursor:pointer;font-size:14px}
+  button.primary{background:var(--accent);color:var(--ink);border:none;padding:11px 20px;border-radius:8px;font-weight:650;cursor:pointer;font-size:14px}
   button.ghost{background:none;border:1px solid var(--line);color:var(--txt);padding:8px 13px;border-radius:8px;cursor:pointer;font-size:13px}
   button.ghost:hover{border-color:var(--accent)}
   button.mini{background:var(--panel2);border:1px solid var(--line);color:var(--txt);width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1}
@@ -74,7 +111,7 @@
   code{background:var(--panel2);padding:1px 5px;border-radius:4px}
   input.qty{width:58px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:14px;text-align:center;font-weight:600}
   .rar{display:inline-block;font-size:12px;font-weight:600;padding:2px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
-  .rar.common{color:#b9bcc4}.rar.uncommon{color:#9fc3d6}.rar.rare{color:#e0c060}.rar.mythic{color:#f07a3a}.rar.special{color:#c58cf0}.rar.bonus{color:#c58cf0}
+  .rar.common{color:var(--r-common)}.rar.uncommon{color:var(--r-uncommon)}.rar.rare{color:var(--r-rare)}.rar.mythic{color:var(--r-mythic)}.rar.special,.rar.bonus{color:var(--r-special)}
   .rl{display:inline-block;background:#b3261e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;vertical-align:middle;margin-left:8px;white-space:nowrap}
   input.tname{display:block;margin:3px 0 0 42px;width:calc(100% - 42px);max-width:260px;background:transparent;border:1px dashed transparent;color:var(--muted);font-size:12px;padding:2px 5px;border-radius:4px;font-style:italic}
   input.tname:hover,input.tname:focus{border-color:var(--line);background:var(--panel2);color:var(--txt);font-style:normal}
@@ -93,14 +130,14 @@
   .vhtoggle{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:flex;gap:6px;align-items:center;width:100%;text-align:left}
   .vhtoggle:hover{color:var(--txt)}
   .vhtoggle .chev{font-size:12px;width:12px}
-  select.langsel{padding:3px 6px;font-size:12px;border-radius:6px}
+  select.langsel{padding:3px 24px 3px 7px;font-size:12px;border-radius:6px;background-position:right 7px center;background-size:9px 6px}
   .dbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(1100px,96vw);max-height:94vh;overflow:auto;position:relative;padding:24px}
   .dclose{position:sticky;top:0;float:right;background:var(--panel2);border:1px solid var(--line);color:var(--txt);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;z-index:2}
   .dclose:hover{border-color:var(--accent)}
   .dgrid{display:grid;grid-template-columns:minmax(260px,400px) 1fr;gap:28px}
   @media (max-width:820px){.dgrid{grid-template-columns:1fr}}
   .dimg{position:sticky;top:0}
-  .dimg img{width:100%;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.6);cursor:zoom-in;display:block}
+  .dimg img{width:100%;border-radius:16px;box-shadow:0 10px 40px var(--shadow);cursor:zoom-in;display:block}
   .dimg img.zoom{cursor:zoom-out}
   .dimg .flip{margin-top:10px;width:100%}
   .dbox h2{margin:0;font-size:26px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -114,18 +151,18 @@
   .clickable{cursor:pointer}
   .clickable:hover .cname{color:var(--accent);text-decoration:underline}
   #detModal .modal-bg{position:absolute;inset:0}
-  .src{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:5px;background:#2a2f3a;color:var(--muted);vertical-align:middle}
-  .src.ct{background:#1d4f6b;color:#cfe9f7}
-  .src.few{background:#6b4a1d;color:#ffe2b8}
-  img.seticon{width:15px;height:15px;vertical-align:-3px;margin-right:4px;filter:invert(1) opacity(.85)}
+  .src{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:5px;background:var(--src-bg);color:var(--muted);vertical-align:middle}
+  .src.ct{background:var(--src-ct-bg);color:var(--src-ct)}
+  .src.few{background:var(--src-few-bg);color:var(--src-few)}
+  img.seticon{width:15px;height:15px;vertical-align:-3px;margin-right:4px;filter:var(--seticon)}
   .pcard .pen{font-size:11px;color:var(--muted)}
   .phead .chk{font-size:13px}
   .langs{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
   .langs .lb{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer}
   .langs .lb:hover{color:var(--txt);border-color:var(--accent)}
-  .langs .lb.on{background:var(--accent);color:#1a1205;border-color:var(--accent)}
+  .langs .lb.on{background:var(--accent);color:var(--ink);border-color:var(--accent)}
   .langs .lb.own{box-shadow:inset 0 -2px 0 var(--ok)}
-  .bry{display:inline-block;background:var(--accent);color:#1a1205;font-size:11px;font-weight:700;padding:0 6px;border-radius:4px;margin-left:4px;vertical-align:1px}
+  .bry{display:inline-block;background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;padding:0 6px;border-radius:4px;margin-left:4px;vertical-align:1px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input:not([type=checkbox]){background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -154,7 +191,7 @@
   .chip.legal{border-color:#3d7a51;color:var(--ok)}
   .chip.banned{border-color:#7a3d3d;color:var(--bad)}
   .chip.restricted{border-color:#7a6a3d;color:var(--accent)}
-  .chip.not_legal{color:#5d626c}
+  .chip.not_legal{color:var(--muted);opacity:.7}
   svg.chart{width:100%;height:150px;display:block}
   footer{color:var(--muted);font-size:12px;padding:0 24px 24px;line-height:1.5}
   /* modal */
@@ -170,6 +207,12 @@
   .eye:hover{color:var(--txt)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
+  .theme{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .theme button{background:none;border:none;color:var(--muted);padding:5px 9px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;gap:4px}
+  .theme button+button{border-left:1px solid var(--line)}
+  .theme button:hover{color:var(--txt)}
+  .theme button.on{background:var(--panel2);color:var(--accent)}
+  .theme svg{width:15px;height:15px}
   .only-m{display:none}
   .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   /* ===== Mobile ===== */
@@ -237,7 +280,7 @@
     .ctable tr{position:relative}
     .ctable .c-name{padding-right:64px}
     .ctable .c-rm{position:absolute;top:10px;right:10px;font-size:12px}
-    .ctable select.langsel,.ctable select{padding:5px 6px;font-size:14px !important}
+    .ctable select.langsel,.ctable select{padding:5px 26px 5px 8px;font-size:14px !important;background-position:right 8px center;background-size:10px 7px}
     /* modal de detalhes em tela cheia */
     #detModal{align-items:stretch}
     .dbox{width:100vw;max-height:none;height:100dvh;border-radius:0;border:none;padding:14px 12px calc(20px + env(safe-area-inset-bottom))}
@@ -260,6 +303,11 @@
       <label>1 USD = R$ <input id="rUSD" type="number" step="0.01"></label>
       <label>1 EUR = R$ <input id="rEUR" type="number" step="0.01"></label>
       <span id="rStatus">carregando câmbio…</span>
+    </div>
+    <div class="theme" role="group" aria-label="Tema">
+      <button type="button" data-th="light" title="Tema claro" aria-label="Tema claro" onclick="setTheme('light')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+      <button type="button" data-th="dark" title="Tema escuro" aria-label="Tema escuro" onclick="setTheme('dark')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <button type="button" data-th="auto" title="Seguir o tema do sistema" aria-label="Seguir o sistema" onclick="setTheme('auto')">Auto</button>
     </div>
     <div class="user" id="userBox"></div>
   </div>
@@ -1696,7 +1744,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.8';
+const APP_VERSION = '2026-11-18.1';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
@@ -1704,7 +1752,7 @@ async function checkVersion() {
     if (m && m[1] !== APP_VERSION && !$('#newVer')) {
       const b = document.createElement('div');
       b.id = 'newVer';
-      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:70;background:var(--accent);color:#1a1205;padding:10px 16px;font-weight:600;text-align:center;cursor:pointer';
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:70;background:var(--accent);color:var(--ink);padding:10px 16px;font-weight:600;text-align:center;cursor:pointer';
       b.textContent = 'Há uma versão nova do app — clique aqui para atualizar';
       b.onclick = () => location.reload();
       document.body.appendChild(b);
