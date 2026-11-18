@@ -558,7 +558,16 @@ async function setQty(id, qty) {
   if (error) throw error;
   if (coll) { const i = coll.findIndex(r => r.id === id); if (i >= 0) coll[i] = data; }
 }
-function findRow(scryId, finish) { return coll ? coll.find(r => r.scryfall_id === scryId && r.finish === finish) : null; }
+// Tiragens brasileiras: coleções de 1995 impressas em português no Brasil podem trazer 1996.
+// Na grade, cada impressão em português de 1995 ganha uma opção "tiragem BR 1996" (mesma carta, ano 1996).
+const BR_REPRINT_YEAR = 1996;
+const sameVariant = (a, b) => a && b && a.id === b.id && (a._brYear || 0) === (b._brYear || 0);
+function rowMatches(r, p) {
+  if (r.scryfall_id !== p.id) return false;
+  if (p._brYear) return r.user_year === p._brYear;
+  return !r.user_year || r.user_year === edYear(p.released_at) || !prints.some(q => q.id === p.id && q._brYear === r.user_year);
+}
+function findRow(print, finish) { return coll ? coll.find(r => rowMatches(r, print) && r.finish === finish) : null; }
 async function snapshot(card) {
   if (!db || !user) return;
   const p = card.prices || {};
@@ -659,11 +668,12 @@ async function pick(name) {
     if (!prints.length) throw new Error('nenhuma impressão encontrada');
     prints.sort((a, b) => b.released_at.localeCompare(a.released_at) || a.set.localeCompare(b.set) || (a.lang === 'en' ? -1 : 1));
     borrowEnPrices(prints);
+    prints = prints.flatMap(p => p.lang === 'pt' && edYear(p.released_at) === BR_REPRINT_YEAR - 1 ? [p, { ...p, _brYear: BR_REPRINT_YEAR }] : [p]);
     if (db && user && !coll) await loadColl();
-    const owned = coll ? prints.find(p => coll.some(r => r.scryfall_id === p.id)) : null;
+    const owned = coll ? prints.find(p => coll.some(r => rowMatches(r, p))) : null;
     if (owned) {
       currentPrint = owned;
-      currentFinish = coll.find(r => r.scryfall_id === owned.id).finish;
+      currentFinish = coll.find(r => rowMatches(r, owned)).finish;
       awaitingChoice = false;
     } else {
       currentPrint = prints.find(p => p.prices.usd || p.prices.eur) || prints[0];
@@ -691,7 +701,7 @@ async function syncCurrent() {
   colStatus = { row: null, busy: false, err: '' };
   if (!db || !user) { renderColBox(); return; }
   if (!coll) await loadColl();
-  const existing = findRow(currentPrint.id, currentFinish);
+  const existing = findRow(currentPrint, currentFinish);
   if (existing) { colStatus.row = existing; renderColBox(); return; }
   if (!$('#autoAdd').checked || prints.length !== 1) { renderColBox(); return; }
   await addPrint(currentPrint, currentFinish, pendingQty);
@@ -699,11 +709,12 @@ async function syncCurrent() {
 
 async function addPrint(print, finish, qty = 1) {
   if (!db || !user) { openAuth(); return null; }
-  const isCur = currentPrint && print.id === currentPrint.id && finish === currentFinish;
+  const isCur = sameVariant(currentPrint, print) && finish === currentFinish;
   if (isCur) { colStatus.busy = true; renderColBox(); }
   try {
     const item = itemFromCard(print, finish, currentTyped);
     if (isCur && pendingLang) item.lang = pendingLang;
+    if (print._brYear) item.user_year = print._brYear;
     if (isCur && pendingYear) item.user_year = +pendingYear;
     const row = await addToColl(item, Math.max(1, qty), true);
     if (isCur) { colStatus.row = row; lookupAdded = row.id; lookupQty = row.quantity; }
@@ -720,7 +731,7 @@ function refreshCardView() { if (currentPrint) renderPrint(); }
 
 // Clicar numa edição = ver (prévia). Trocar o ACABAMENTO logo após adicionar corrige o que acabou de entrar.
 async function changeSelection(print, finish) {
-  const sameFix = currentPrint && print.id === currentPrint.id && finish !== currentFinish;
+  const sameFix = sameVariant(currentPrint, print) && finish !== currentFinish;
   if (sameFix && lookupAdded && user) {
     const r = coll && coll.find(x => x.id === lookupAdded);
     if (r && r.quantity === lookupQty) {
@@ -728,7 +739,7 @@ async function changeSelection(print, finish) {
     }
   }
   lookupAdded = null;
-  if (!currentPrint || print.id !== currentPrint.id) pendingYear = null;
+  if (!sameVariant(currentPrint, print)) pendingYear = print._brYear || null;
   currentPrint = print; currentFinish = finish;
   renderPrint();
   snapshot(print).catch(() => {});
@@ -739,7 +750,7 @@ function siblingsHtml(r) {
   const c = currentPrint;
   const sib = coll ? coll.filter(x => (x.oracle_id && x.oracle_id === c.oracle_id) || x.name === c.name) : [];
   if (!sib.length) return '';
-  return `<span class="muted" style="width:100%;order:9;font-size:12px">Na sua coleção: ${sib.length} versão(ões), ${sib.reduce((t, x) => t + x.quantity, 0)} unid. — ${sib.map(x => esc(x.set_code.toUpperCase() + ' #' + x.collector_number + (x.finish !== 'nonfoil' ? ' ' + FINISH_PT[x.finish] : '') + (x.lang !== 'en' ? ' ' + x.lang.toUpperCase() : '') + ' ×' + x.quantity)).join(' · ')}</span>`;
+  return `<span class="muted" style="width:100%;order:9;font-size:12px">Na sua coleção: ${sib.length} versão(ões), ${sib.reduce((t, x) => t + x.quantity, 0)} unid. — ${sib.map(x => esc(x.set_code.toUpperCase() + ' #' + x.collector_number + (x.finish !== 'nonfoil' ? ' ' + FINISH_PT[x.finish] : '') + (x.lang !== 'en' ? ' ' + x.lang.toUpperCase() : '') + ' · ' + (yearOf(x) || '') + ' ×' + x.quantity)).join(' · ')}</span>`;
 }
 
 function renderColBox() {
@@ -821,19 +832,20 @@ function strengthHtml(c) {
 function printCardHtml(x, i) {
   const usd = num(x.prices.usd) ?? num(x.prices.usd_foil) ?? num(x.prices.usd_etched);
   const foilOnly = x.prices.usd == null && usd != null;
-  const rows = coll ? coll.filter(r => r.scryfall_id === x.id) : [];
+  const rows = coll ? coll.filter(r => rowMatches(r, x)) : [];
   const qty = rows.reduce((t, r) => t + r.quantity, 0);
+  const yr = x._brYear ? `<b style="color:var(--txt)">${x._brYear}</b> (tiragem BR)` : x.released_at.slice(0, 4);
   const art = x.artist ? ' · ' + x.artist : '';
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
-  const key = norm((SET_PT[x.set] || '') + ' ' + x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : ''));
-  const sel = x.id === currentPrint.id;
+  const key = norm((SET_PT[x.set] || '') + ' ' + x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : '') + (x._brYear ? ' ' + x._brYear + ' tiragem brasileira br' : ''));
+  const sel = sameVariant(x, currentPrint);
   return `<div class="pcard ${sel ? 'sel' : ''} ${qty ? 'owned' : ''}" data-i="${i}" data-k="${esc(key)}">
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
-      ${x.lang === 'pt' ? '<span class="tagl">PT</span>' : ''}
+      ${x.lang === 'pt' ? `<span class="tagl">${x._brYear ? 'PT · ' + x._brYear : 'PT'}</span>` : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
       <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}</div>
       ${SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
-      <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${x.released_at.slice(0, 4)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
+      <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${yr} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
       <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
     </div>
     <div class="pact">
@@ -855,12 +867,12 @@ function renderPrint() {
     ['etched', num(p.usd_etched), num(p.eur_etched)],
   ].filter(r => r[1] != null || r[2] != null || (c.finishes || []).includes(r[0]));
 
-  const allUsd = prints.map(x => ({ v: num(x.prices.usd), x })).filter(o => o.v != null);
+  const allUsd = prints.filter(x => !x._brYear).map(x => ({ v: num(x.prices.usd), x })).filter(o => o.v != null);
   let rangeHtml = '';
   if (allUsd.length > 1) {
     const min = allUsd.reduce((a, b) => b.v < a.v ? b : a);
     const max = allUsd.reduce((a, b) => b.v > a.v ? b : a);
-    rangeHtml = `<div class="range"><b>Entre as ${prints.length} edições (normal):</b>
+    rangeHtml = `<div class="range"><b>Entre as ${prints.filter(x => !x._brYear).length} edições (normal):</b>
       mais barata <span class="brl">${fBRL(toBRL(min.v, 'usd'))}</span> <span class="muted">(${esc(min.x.set_name)})</span> ·
       mais cara <span class="brl">${fBRL(toBRL(max.v, 'usd'))}</span> <span class="muted">(${esc(max.x.set_name)})</span></div>`;
   }
@@ -877,7 +889,7 @@ function renderPrint() {
       ${(() => { const kn = currentTyped || (coll && (coll.find(r => r.oracle_id === c.oracle_id && r.typed_name) || {}).typed_name); return kn ? `<div class="muted" style="margin:-2px 0 6px;font-style:italic">“${esc(kn)}”</div>` : ''; })()}
       <div class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${rarityHtml(c.rarity, c.set)}<span><b style="color:var(--txt);font-weight:600">${colorLabel(colorsOf(c), c.type_line)}</b> · ${esc(c.type_line || '')}${c.artist ? ' · ilustração de ' + esc(c.artist) : ''}</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span class="muted" style="font-size:13px">${coll && coll.some(r => r.scryfall_id === c.id) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${setIcon(c.set)}${esc(SET_PT[c.set] ? SET_PT[c.set] + ' / ' + c.set_name : c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); return own && own.user_year && own.user_year !== edYear(c.released_at) ? `${own.user_year} <span class="muted" style="font-weight:400">(edição: ${c.released_at.slice(0, 4)})</span>` : c.released_at.slice(0, 4); })()} ${(() => { const own = coll && coll.find(r => r.scryfall_id === c.id && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
+        <span class="muted" style="font-size:13px">${coll && coll.some(r => rowMatches(r, c)) ? 'Sua edição:' : 'Mostrando:'} <b style="color:var(--txt)">${setIcon(c.set)}${esc(SET_PT[c.set] ? SET_PT[c.set] + ' / ' + c.set_name : c.set_name)} (${c.set.toUpperCase()} #${esc(c.collector_number)}) · ${(() => { const own = coll && coll.find(r => rowMatches(r, c) && r.finish === currentFinish); const y = (own && own.user_year) || c._brYear; return y && y !== edYear(c.released_at) ? `${y}${c._brYear ? ' (tiragem brasileira)' : ''} <span class="muted" style="font-weight:400">(edição original: ${c.released_at.slice(0, 4)})</span>` : c.released_at.slice(0, 4); })()} ${(() => { const own = coll && coll.find(r => rowMatches(r, c) && r.finish === currentFinish); const l = own ? own.lang : (['en', 'pt'].includes(c.lang) ? c.lang : ''); return l ? ' · ' + (LANG_PT[l] || l) : ''; })()}${BORDER_PT[c.border_color] ? ' · ' + BORDER_PT[c.border_color] : ''}</b></span>
         <select id="finSel" title="Acabamento">${fins}</select>
       </div>
       ${rows.length ? `<table>
@@ -926,13 +938,13 @@ function renderPrint() {
       const add = card.querySelector('[data-gadd]');
       if (add) add.onclick = () => addPrint(np, defaultFinish(np), 1);
       card.querySelectorAll('[data-gq]').forEach(b => b.onclick = async () => {
-        const rows = coll.filter(r => r.scryfall_id === np.id);
+        const rows = coll.filter(r => rowMatches(r, np));
         const r = rows.find(x => x.finish === defaultFinish(np)) || rows[0]; if (!r) return;
         try { await setQty(r.id, r.quantity + +b.dataset.gq); if (colStatus.row && colStatus.row.id === r.id && r.quantity + +b.dataset.gq < 1) colStatus.row = null; refreshCardView(); renderCollBadge(); }
         catch (e) { toast('Erro: ' + e.message); }
       });
       card.querySelector('[data-gdet]').onclick = () => {
-        const r = coll && coll.find(x => x.scryfall_id === np.id);
+        const r = coll && coll.find(x => rowMatches(x, np));
         openDetailsById(np.id, r || null, { finish: r ? r.finish : defaultFinish(np) });
       };
     });
