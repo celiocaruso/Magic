@@ -906,7 +906,7 @@ function renderPrint() {
   if (allUsd.length > 1) {
     const min = allUsd.reduce((a, b) => b.v < a.v ? b : a);
     const max = allUsd.reduce((a, b) => b.v > a.v ? b : a);
-    rangeHtml = `<div class="range"><b>Entre as ${prints.filter(x => !x._brYear).length} edições (normal):</b>
+    rangeHtml = `<div class="range"><b>Entre as ${groups.length} edições (normal):</b>
       mais barata <span class="brl">${fBRL(toBRL(min.v, 'usd'))}</span> <span class="muted">(${esc(min.x.set_name)})</span> ·
       mais cara <span class="brl">${fBRL(toBRL(max.v, 'usd'))}</span> <span class="muted">(${esc(max.x.set_name)})</span></div>`;
   }
