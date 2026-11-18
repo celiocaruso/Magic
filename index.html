@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Magic · Avaliador de cartas MTG</title>
+<title>Cards · Avaliador TCG (Magic e Pokémon)</title>
 <meta name="theme-color" content="#0f1115">
 <script>
 (function(){
@@ -418,8 +418,8 @@
 <div class="toast" id="toast"></div>
 
 <footer>
-  Dados de cartas e preços: <a href="https://scryfall.com">Scryfall</a> (preços de TCGplayer e Cardmarket, atualizados 1x/dia). Câmbio: AwesomeAPI (cotação comercial, Brasil), com reserva no BCE via Frankfurter. Valores em R$ são conversão direta do preço internacional, não o preço do mercado brasileiro.
-  Versão <span id="appVer"></span>. Conteúdo de Magic: The Gathering © Wizards of the Coast. Projeto de fã, sem vínculo com a Wizards.
+  Dados de cartas e preços: Magic via <a href="https://scryfall.com">Scryfall</a> e <a href="https://www.cardtrader.com">CardTrader</a>; Pokémon via <a href="https://tcgdex.dev">TCGdex</a> (preços de TCGplayer e Cardmarket, atualizados 1x/dia). Câmbio: AwesomeAPI (cotação comercial, Brasil), com reserva no BCE via Frankfurter. Valores em R$ são conversão direta do preço internacional, não o preço do mercado brasileiro.
+  Versão <span id="appVer"></span>. Magic: The Gathering © Wizards of the Coast; Pokémon © Nintendo/Creatures/GAME FREAK/The Pokémon Company. Projeto de fã, sem vínculo com essas empresas.
 </footer>
 
 <script>
@@ -1831,7 +1831,7 @@ function pkmPrice(card, finish) {
   const eur = num(holo ? (cm['avg30-holo'] ?? cm['avg-holo'] ?? cm.avg30 ?? cm.avg) : (cm.avg30 ?? cm.avg ?? cm.trend));
   return { usd: usd > 0 ? usd : null, eur: eur > 0 ? eur : null, tpKey };
 }
-const pkFinishes = v => { const o = PKM_FINISH.filter(([, k]) => v && v[k]).map(([f]) => f); if (v && v.firstEdition && v.holo) o.push('first-holo'); return o.length ? o : ['nonfoil']; };
+const pkFinishes = v => { if (!v) return ['nonfoil']; const o = []; if (v.normal) o.push('nonfoil'); if (v.holo) o.push('holo'); if (v.reverse) o.push('reverse'); if (v.firstEdition && v.normal) o.push('first'); if (v.firstEdition && v.holo) o.push('first-holo'); if (v.firstEdition && !v.normal && !v.holo) o.push('first'); return o.length ? o : ['nonfoil']; };
 
 let pkSets = null;
 async function pkLoadSets() {
@@ -2087,7 +2087,7 @@ async function refreshPkmPrices(onProgress) {
 
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-18.3';
+const APP_VERSION = '2026-11-18.4';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
