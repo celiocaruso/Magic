@@ -125,8 +125,7 @@
   .langs .lb:hover{color:var(--txt);border-color:var(--accent)}
   .langs .lb.on{background:var(--accent);color:#1a1205;border-color:var(--accent)}
   .langs .lb.own{box-shadow:inset 0 -2px 0 var(--ok)}
-  .pcard.br{background:linear-gradient(180deg,#1d3a2a,var(--panel2) 60%)}
-  .bry{display:inline-block;background:#1f6f3f;color:#fff;font-size:11px;font-weight:700;padding:0 6px;border-radius:4px;margin-left:4px}
+  .bry{display:inline-block;background:var(--accent);color:#1a1205;font-size:11px;font-weight:700;padding:0 6px;border-radius:4px;margin-left:4px;vertical-align:1px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input:not([type=checkbox]){background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -877,9 +876,9 @@ function groupCardHtml(g, gi) {
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
       ${x.lang !== 'en' ? `<span class="tagl">${esc(langLabel(x))}</span>` : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
-      <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}${x._brYear ? ` <span class="bry">${x._brYear}</span>` : ''}</div>
-      ${x._brYear ? '<div class="pen">tiragem brasileira · português</div>' : SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
-      <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${yr} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
+      <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)} <span class="bry" title="${x._brYear ? 'Tiragem brasileira' : 'Ano de lançamento'}">${x._brYear || x.released_at.slice(0, 4)}</span></div>
+      ${x._brYear ? `<div class="pen">${esc(x.set_name)} · tiragem brasileira</div>` : SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
+      <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
       <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
     </div>
     ${g.prints.length > 1 ? `<div class="langs" title="Idiomas/tiragens desta edição — clique no da sua carta">${g.prints.map((p, j) =>
@@ -1597,7 +1596,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.4';
+const APP_VERSION = '2026-11-17.5';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
