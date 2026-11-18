@@ -1898,7 +1898,7 @@ async function pkPick(s) {
     const ptIds = new Map((pt || []).map(c => [c.id, c]));
     let ids = [...new Set([...(en || []).map(c => c.id), ...ptIds.keys()])];
     if (!ids.length) { out.innerHTML = '<p class="warn">Nenhuma carta com esse nome.</p>'; return; }
-    if (ids.length > 120) ids = ids.slice(0, 120);
+    if (ids.length > 250) ids = ids.slice(0, 250);
     const enById = new Map((en || []).map(c => [c.id, c]));
     const prints = ids.map(id => {
       const b = enById.get(id) || ptIds.get(id);
@@ -2087,7 +2087,7 @@ async function refreshPkmPrices(onProgress) {
 
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-18.4';
+const APP_VERSION = '2026-11-18.5';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
