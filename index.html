@@ -207,6 +207,14 @@
   .eye:hover{color:var(--txt)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
+  .gamebar{display:flex;align-items:center;gap:10px;padding:12px 24px 0;font-size:13px}
+  .gamesel{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel)}
+  .gamesel button{background:none;border:none;color:var(--muted);padding:7px 16px;cursor:pointer;font-size:14px;font-weight:600}
+  .gamesel button+button{border-left:1px solid var(--line)}
+  .gamesel button.on{background:var(--accent);color:var(--ink)}
+  img.seticon.pk{filter:none;opacity:1;width:auto;max-width:22px}
+  .pcard .noimg{aspect-ratio:488/680;display:flex;align-items:center;justify-content:center;background:var(--panel);border-radius:6px;color:var(--muted);font-size:12px}
+  .pcard .langs .langsel{font-size:11px;padding:2px 22px 2px 6px;margin-left:auto}
   .theme{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .theme button{background:none;border:none;color:var(--muted);padding:5px 9px;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;gap:4px}
   .theme button+button{border-left:1px solid var(--line)}
@@ -225,6 +233,9 @@
     .rates input{width:62px;padding:4px 5px}
     #rStatus{display:none}
     .user{font-size:12px}
+    .gamebar{padding:10px 10px 0}
+    .gamesel{flex:1}
+    .gamesel button{flex:1;padding:9px 10px}
     .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 8px 0;gap:4px;flex-wrap:nowrap}
     .tab{flex:1;padding:10px 6px;font-size:14px;text-align:center;white-space:nowrap}
     main{padding:0 6px 28px}
@@ -297,7 +308,7 @@
 </head>
 <body>
 <header>
-  <h1>Magic · <span>avaliador MTG</span></h1>
+  <h1>Cards · <span>avaliador TCG</span></h1>
   <div class="hdr-right">
     <div class="rates">
       <label>1 USD = R$ <input id="rUSD" type="number" step="0.01"></label>
@@ -313,6 +324,13 @@
   </div>
 </header>
 
+<div class="gamebar">
+  <span class="muted">Jogo</span>
+  <div class="gamesel" role="group" aria-label="Jogo">
+    <button type="button" data-g="mtg">Magic</button>
+    <button type="button" data-g="pkm">Pokémon</button>
+  </div>
+</div>
 <div class="tabs">
   <button class="tab active" data-tab="single">Carta</button>
   <button class="tab" data-tab="list">Lista</button>
@@ -322,6 +340,17 @@
 <main>
   <!-- CARTA -->
   <section class="pane active" id="pane-single">
+   <div id="pkmSingle" style="display:none">
+    <div class="searchrow">
+      <div class="search">
+        <input id="pq" placeholder="Nome da carta Pokémon, em inglês ou português (ex: Charizard)" autocomplete="off">
+        <div class="sugg" id="psugg"></div>
+      </div>
+      <button class="primary" id="pBtn">Buscar</button>
+    </div>
+    <div id="pkmOut"><p class="hint" style="margin-top:14px">Digite o nome de uma carta para ver todas as impressões publicadas, com preços do TCGplayer e do Cardmarket.</p></div>
+   </div>
+   <div id="mtgSingle">
     <div class="searchrow">
       <div class="search">
         <input id="q" placeholder="Nome da carta, em inglês ou português (ex: Sol Ring)" autocomplete="off">
@@ -333,6 +362,7 @@
       </label>
     </div>
     <div id="cardOut"></div>
+   </div>
   </section>
 
   <!-- LISTA -->
@@ -403,6 +433,10 @@ const API = 'https://api.scryfall.com';
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let user = null;
+const GAMES = { mtg: 'Magic', pkm: 'Pokémon' };
+let game = (() => { try { const g = localStorage.getItem('magic.game'); return GAMES[g] ? g : 'mtg'; } catch { return 'mtg'; } })();
+const gameOf = r => r.game || 'mtg';
+const collGame = () => (coll || []).filter(r => gameOf(r) === game);
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -551,9 +585,9 @@ function bestPrice(r) {
   if (ctBrl != null) return { brl: ctBrl, src: (r.ct_lang_exact ? 'CT' : 'CT*') + ((r.ct_listings || 0) < 3 ? '!' : ''), orig: 'R$ ' + ctBrl.toFixed(2).replace('.', ','),
     tip: `CardTrader: mediana dos anúncios mais baratos ${r.ct_lang_exact ? 'em ' + (LANG_PT[r.lang] || r.lang) : 'em qualquer idioma (não há anúncio em ' + (LANG_PT[r.lang] || r.lang) + ')'} · ${r.ct_listings || 0} anúncio(s)${(r.ct_listings || 0) < 3 ? ' — POUCA OFERTA: preço pedido por 1–2 vendedores, pode estar fora do mercado' : ''}` };
   const u = num(r.price_usd);
-  if (u != null && rates.usd) return { brl: u * rates.usd, src: r.price_from_en ? 'TCG·EN' : 'TCG', orig: 'US$ ' + u.toFixed(2), tip: 'TCGplayer via Scryfall' + (r.price_from_en ? ' (preço da versão em inglês)' : '') };
+  if (u != null && rates.usd) return { brl: u * rates.usd, src: r.price_from_en ? 'TCG·EN' : 'TCG', orig: 'US$ ' + u.toFixed(2), tip: 'TCGplayer via ' + (gameOf(r) === 'pkm' ? 'TCGdex' : 'Scryfall') + (r.price_from_en ? ' (preço da versão em inglês)' : '') };
   const e = num(r.price_eur);
-  if (e != null && rates.eur) return { brl: e * rates.eur, src: 'MKM', orig: '€ ' + e.toFixed(2), tip: 'Cardmarket via Scryfall' };
+  if (e != null && rates.eur) return { brl: e * rates.eur, src: 'MKM', orig: '€ ' + e.toFixed(2), tip: 'Cardmarket via ' + (gameOf(r) === 'pkm' ? 'TCGdex (média 30 dias)' : 'Scryfall') };
   return null;
 }
 const srcTag = b => b ? `<span class="src ${b.src.startsWith('CT') ? 'ct' : ''} ${b.src.endsWith('!') ? 'few' : ''}" title="${esc(b.tip)}">${b.src}</span>` : '';
@@ -1513,7 +1547,7 @@ function collHeaderHtml() {
   }).join('') + '<th></th></tr>';
 }
 function renderCollBadge() {
-  $('#collCount').textContent = coll ? coll.reduce((s, r) => s + r.quantity, 0) : '–';
+  $('#collCount').textContent = coll ? collGame().reduce((s, r) => s + r.quantity, 0) : '–';
 }
 function renderColl() {
   renderCollBadge();
@@ -1521,14 +1555,15 @@ function renderColl() {
   if (!db) { out.innerHTML = '<p class="warn">Banco indisponível.</p>'; return; }
   if (!user) { out.innerHTML = '<p class="hint">Entre para ver e guardar sua coleção.</p><button class="primary" id="ccIn">Entrar</button>'; $('#ccIn').onclick = openAuth; return; }
   if (!coll) { out.innerHTML = '<p class="status">carregando coleção…</p>'; return; }
-  if (!coll.length) { out.innerHTML = '<p class="hint">Sua coleção está vazia. Toda carta avaliada com "Carta da coleção" marcada entra aqui.</p>'; return; }
+  const all = collGame(), isPk = game === 'pkm';
+  if (!all.length) { out.innerHTML = `<p class="hint">Sua coleção de ${GAMES[game]} está vazia. ${isPk ? 'Busque uma carta na aba Carta e toque em “+ Adicionar”.' : 'Toda carta avaliada com "Carta da coleção" marcada entra aqui.'}</p>`; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
   let total = 0, totalOrig = 0, count = 0, noPrice = 0, ctCount = 0;
   const nq = norm(collQuery);
-  const view = coll.filter(r => (!nq || norm(r.name).includes(nq) || norm(r.typed_name).includes(nq))
+  const view = all.filter(r => (!nq || norm(r.name).includes(nq) || norm(r.typed_name).includes(nq))
     && (!collSet || r.set_code === collSet)
     && (!collLang || (r.lang || 'en') === collLang)
-    && (!collRarity || (collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
+    && (!collRarity || (isPk ? r.rarity_label === collRarity : collRarity === 'rl' ? r.reserved : r.rarity === collRarity))
     && (!collColor || (collColor === 'M' ? (r.colors || []).length > 1 : collColor === 'C' ? r.colors && !r.colors.length : (r.colors || []).length === 1 && r.colors[0] === collColor)));
   const rows = view.map(r => {
     let u, ub, b = null;
@@ -1539,34 +1574,34 @@ function renderColl() {
     count += r.quantity;
     return { r, u, ub, tb, b };
   }).sort(collComparator());
-  const oldest = coll.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
+  const oldest = all.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
   out.innerHTML = `
     <div class="row cfilters" style="margin-top:0">
       <label class="muted">Base de preço:
-        <select id="collBasis"><option value="best" ${cur === 'best' ? 'selected' : ''}>Melhor disponível (CardTrader no idioma → TCGplayer)</option><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
+        <select id="collBasis"><option value="best" ${cur === 'best' ? 'selected' : ''}>${isPk ? 'Melhor disponível (TCGplayer → Cardmarket)' : 'Melhor disponível (CardTrader no idioma → TCGplayer)'}</option><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
       </label>
       <input id="collQ" class="collq" type="search" placeholder="🔍 buscar carta (inglês ou português)" value="${esc(collQuery)}" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px 10px;font-size:14px;width:260px">
       <label class="muted">Coleção:
-        <select id="collSet" style="max-width:220px"><option value="">Todas</option>${[...new Map(coll.filter(r => r.set_code).map(r => [r.set_code, r.set_name || r.set_code])).entries()]
-          .sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => `<option value="${esc(k)}" ${collSet === k ? 'selected' : ''}>${esc(n)} (${esc(k.toUpperCase())}) · ${coll.filter(r => r.set_code === k).reduce((t, r) => t + r.quantity, 0)}</option>`).join('')}</select>
+        <select id="collSet" style="max-width:220px"><option value="">Todas</option>${[...new Map(all.filter(r => r.set_code).map(r => [r.set_code, r.set_name || r.set_code])).entries()]
+          .sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => `<option value="${esc(k)}" ${collSet === k ? 'selected' : ''}>${esc(n)} (${esc(k.toUpperCase())}) · ${all.filter(r => r.set_code === k).reduce((t, r) => t + r.quantity, 0)}</option>`).join('')}</select>
       </label>
       <label class="muted">Idioma:
-        <select id="collLang"><option value="">Todos</option>${[...new Set(coll.map(r => r.lang || 'en'))].map(l => `<option value="${l}" ${collLang === l ? 'selected' : ''}>${LANG_PT[l] || l}</option>`).join('')}</select>
+        <select id="collLang"><option value="">Todos</option>${[...new Set(all.map(r => r.lang || 'en'))].map(l => `<option value="${l}" ${collLang === l ? 'selected' : ''}>${LANG_PT[l] || l}</option>`).join('')}</select>
       </label>
       <label class="muted">Raridade:
-        <select id="collRar"><option value="">Todas</option>${['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => coll.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('')}${coll.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : ''}</select>
+        <select id="collRar"><option value="">Todas</option>${isPk ? [...new Set(all.map(r => r.rarity_label).filter(Boolean))].sort().map(k => `<option value="${esc(k)}" ${collRarity === k ? 'selected' : ''}>${esc(k)}</option>`).join('') : ['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'].filter(k => all.some(r => r.rarity === k)).map(k => `<option value="${k}" ${collRarity === k ? 'selected' : ''}>${RARITY_PT[k]}</option>`).join('') + (all.some(r => r.reserved) ? `<option value="rl" ${collRarity === 'rl' ? 'selected' : ''}>Reserved List</option>` : '')}</select>
       </label>
-      <label class="muted">Cor:
+      <label class="muted" style="${isPk ? 'display:none' : ''}">Cor:
         <select id="collCor"><option value="">Todas</option>${[['W', 'Branco'], ['U', 'Azul'], ['B', 'Preto'], ['R', 'Vermelho'], ['G', 'Verde'], ['M', 'Multicolorida'], ['C', 'Incolor']].map(([k, n]) => `<option value="${k}" ${collColor === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
       </label>
       <button class="ghost" id="collRefresh">Atualizar preços</button>
       <button class="ghost" id="collCsv">Exportar CSV</button>
       <span class="status" id="collStatus">${oldest ? 'preços de ' + new Date(oldest).toLocaleDateString('pt-BR') + ' (mais antigo)' : ''}</span>
     </div>
-    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet || collLang ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${cur === 'best' ? `${ctCount} com preço do CardTrader` : `${fo(totalOrig)} na base ${cur.toUpperCase()}`}</small></div>
-    ${cur === 'best' && !coll.some(r => r.ct_updated_at) ? `<div class="hint" style="margin-top:6px">Preços por idioma (CardTrader) ainda não carregados. Clique em <b>Atualizar preços</b>${ctState === 'missing' ? ' — <span style="color:var(--bad)">falta configurar o token do CardTrader no Supabase</span>' : ''}.</div>` : ''}
+    <div class="total">${fBRL(total)} <small>${collRarity || collColor || collQuery || collSet || collLang ? 'filtrado · ' : ''}${count} cartas · ${view.length} itens · ${cur === 'best' ? (isPk ? 'preços TCGplayer/Cardmarket' : `${ctCount} com preço do CardTrader`) : `${fo(totalOrig)} na base ${cur.toUpperCase()}`}</small></div>
+    ${cur === 'best' && !isPk && !all.some(r => r.ct_updated_at) ? `<div class="hint" style="margin-top:6px">Preços por idioma (CardTrader) ainda não carregados. Clique em <b>Atualizar preços</b>${ctState === 'missing' ? ' — <span style="color:var(--bad)">falta configurar o token do CardTrader no Supabase</span>' : ''}.</div>` : ''}
     <div class="panel2" style="padding:${vhOpen ? '12px 14px' : '8px 14px'}">
-      <button class="vhtoggle" id="vhToggle" aria-expanded="${vhOpen}"><span class="chev">${vhOpen ? '▾' : '▸'}</span> Valor da coleção ao longo do tempo${!vhOpen && valueHist && valueHist.length ? ` <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">· ${valueHist.length} dia(s) registrados</span>` : ''}</button>
+      <button class="vhtoggle" id="vhToggle" aria-expanded="${vhOpen}"><span class="chev">${vhOpen ? '▾' : '▸'}</span> Valor da coleção ao longo do tempo <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">(todos os jogos)</span>${!vhOpen && valueHist && valueHist.length ? ` <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0">· ${valueHist.length} dia(s) registrados</span>` : ''}</button>
       ${vhOpen ? `<div id="vhBox" style="margin-top:8px">${valueHistHtml()}</div>` : ''}
     </div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
@@ -1578,13 +1613,13 @@ function renderColl() {
       ${rows.length ? '' : '<tr><td colspan="11" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb, b }) => `<tr>
         <td class="c-qty" style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td class="c-name"><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt="" loading="lazy"><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
+        <td class="c-name"><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt="" loading="lazy"><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish] || esc(r.finish)}</span>` : ''}${rlHtml(r.reserved)}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
         <td class="c-lang">${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
-        <td class="c-color" style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
-        <td class="c-rar">${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
+        <td class="c-color" style="white-space:nowrap">${isPk ? `<span class="cor" style="margin:0">${esc(r.type_line || '—')}</span>` : r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
+        <td class="c-rar">${isPk ? (r.rarity_label ? `<span class="rar ${esc(r.rarity || 'common')}">${esc(r.rarity_label)}</span>` : '<span class="muted">—</span>') : rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
         <td class="c-year">${yearSelect(r.user_year, edYear(r.released_at), `data-year="${r.id}"`)}</td>
-        <td class="c-set muted">${setIcon(r.set_code)}${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
+        <td class="c-set muted">${isPk ? pkmSetIcon(pkmSymbol(r.image_url)) : setIcon(r.set_code)}${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
         <td class="c-unit num muted" style="white-space:nowrap">${cur === 'best' ? (u || '—') + srcTag(b) : fo(u)}</td><td class="c-unitbrl num"><span class="only-m muted">unit. </span>${fBRL(ub)}</td><td class="c-total num brl">${fBRL(tb)}</td>
         <td class="c-rm"><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
@@ -1636,7 +1671,8 @@ function renderColl() {
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
   });
   out.querySelectorAll('[data-det]').forEach(el => el.onclick = () => {
-    const r = coll.find(x => x.id === el.dataset.det); if (r) openDetailsById(r.scryfall_id, r);
+    const r = coll.find(x => x.id === el.dataset.det); if (!r) return;
+    if (gameOf(r) === 'pkm') pkOpenDetails(r.scryfall_id.replace(/^pkm:/, ''), r); else openDetailsById(r.scryfall_id, r);
   });
   out.querySelectorAll('select[data-year]').forEach(sel => sel.onchange = async () => {
     try { await setYear(sel.dataset.year, sel.value); toast('Ano: ' + (sel.value || 'o da edição')); renderColl(); }
@@ -1659,9 +1695,9 @@ function renderColl() {
   out.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
     try { await removeRow(b.dataset.rm); renderColl(); toast('Removida'); } catch (e) { toast('Erro: ' + e.message); }
   });
-  $('#collCsv').onclick = () => downloadCSV('colecao-mtg-' + new Date().toISOString().slice(0, 10) + '.csv',
+  $('#collCsv').onclick = () => downloadCSV('colecao-' + game + '-' + new Date().toISOString().slice(0, 10) + '.csv',
     ['qtd', 'carta', 'nome_digitado', 'preco_melhor_brl', 'fonte_preco', 'cardtrader_eur', 'ano_carta', 'ano_edicao', 'idioma', 'cor', 'custo_mana', 'tipo', 'raridade', 'reserved_list', 'colecao', 'set', 'numero', 'acabamento', 'unit_usd', 'unit_eur', 'unit_brl_' + cur, 'total_brl_' + cur],
-    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), (bestPrice(r)?.brl ?? '') && bestPrice(r).brl.toFixed(2), bestPrice(r)?.src || '', r.ct_price ?? '', yearOf(r) || '', edYear(r.released_at) || '', LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), RARITY_PT[r.rarity] || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
+    rows.map(({ r, ub, tb }) => [r.quantity, csvq(r.name), csvq(r.typed_name), (bestPrice(r)?.brl ?? '') && bestPrice(r).brl.toFixed(2), bestPrice(r)?.src || '', r.ct_price ?? '', yearOf(r) || '', edYear(r.released_at) || '', LANG_PT[r.lang] || r.lang, csvq(r.colors == null ? '' : colorLabel(r.colors, r.type_line)), csvq(r.mana_cost), csvq(r.type_line), (isPk ? r.rarity_label : RARITY_PT[r.rarity]) || '', r.reserved ? 'sim' : 'nao', csvq(r.set_name), (r.set_code || '').toUpperCase(), r.collector_number, r.finish,
       r.price_usd ?? '', r.price_eur ?? '', ub?.toFixed(2) ?? '', tb?.toFixed(2) ?? ''].join(';')));
   $('#collRefresh').onclick = refreshPrices;
 }
@@ -1720,31 +1756,338 @@ async function syncCardTrader() {
 async function refreshPrices() {
   const btn = $('#collRefresh'); btn.disabled = true;
   try {
-    const ids = [...new Set(coll.map(r => r.scryfall_id))].map(id => ({ id }));
+    const mtgRows = coll.filter(r => gameOf(r) === 'mtg');
+    const ids = [...new Set(mtgRows.map(r => r.scryfall_id))].map(id => ({ id }));
     const { found } = await fetchCollection(ids, (a, b) => $('#collStatus').textContent = `consultando ${a}/${b}…`);
     const needEn = found.filter(c => c.lang !== 'en' && !hasPrice(c));
     const enCards = needEn.length ? (await fetchCollection(needEn.map(c => ({ set: c.set, collector_number: c.collector_number })))).found : [];
     borrowEnPrices(found, enCards);
     const byId = new Map(found.map(c => [c.id, c]));
     let n = 0;
-    for (const r of coll) {
+    for (const r of mtgRows) {
       const c = byId.get(r.scryfall_id); if (!c) continue;
       const pr = priceFor(c, r.finish);
       const { data, error } = await db.from('collection_items')
         .update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString(), rarity: RARITY_PT[c.rarity] ? c.rarity : null, reserved: !!c.reserved, mana_cost: manaCostOf(c), cmc: c.cmc ?? null, colors: colorsOf(c), type_line: c.type_line || face0(c).type_line || null, border_color: c.border_color || null, price_from_en: !!c._fromEn, released_at: c.released_at || null })
         .eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
-      $('#collStatus').textContent = `atualizando ${++n}/${coll.length}…`;
+      $('#collStatus').textContent = `atualizando ${++n}/${mtgRows.length}…`;
     }
     for (const c of found) snapshot(c).catch(() => {});
-    await syncCardTrader();
+    await refreshPkmPrices((a, b) => { const st = $('#collStatus'); if (st) st.textContent = `Pokémon: ${a}/${b}…`; });
+    if (mtgRows.length) await syncCardTrader();
     renderColl(); toast('Preços atualizados');
     saveValueToday().then(loadValueHistory).catch(() => {});
   } catch (e) { $('#collStatus').innerHTML = `<span style="color:var(--bad)">erro: ${esc(netMsg(e))}</span>`; btn.disabled = false; }
 }
 
+/* ================= Jogo selecionado (Magic / Pokémon) ================= */
+function setGame(g) {
+  if (!GAMES[g]) return;
+  const changed = g !== game;
+  game = g; try { localStorage.setItem('magic.game', g); } catch {}
+  document.querySelectorAll('.gamesel button').forEach(b => b.classList.toggle('on', b.dataset.g === g));
+  document.documentElement.dataset.game = g;
+  $('#mtgSingle').style.display = g === 'mtg' ? '' : 'none';
+  $('#pkmSingle').style.display = g === 'pkm' ? '' : 'none';
+  const lt = document.querySelector('.tab[data-tab=list]');
+  lt.style.display = g === 'mtg' ? '' : 'none';
+  if (g !== 'mtg' && lt.classList.contains('active')) document.querySelector('.tab[data-tab=single]').click();
+  if (changed) { collSet = ''; collRarity = ''; collColor = ''; collLang = ''; }
+  renderColl();
+}
+document.querySelectorAll('.gamesel button').forEach(b => b.onclick = () => setGame(b.dataset.g));
+
+/* ================= Pokémon (dados: TCGdex — api.tcgdex.net, gratuito, multilíngue) ================= */
+const TCGDEX = 'https://api.tcgdex.net/v2';
+const PKM_FINISH = [['nonfoil', 'normal'], ['holo', 'holo'], ['reverse', 'reverse'], ['first', 'firstEdition']];
+Object.assign(FINISH_PT, { holo: 'Holo', reverse: 'Reverse holo', first: '1ª edição', 'first-holo': '1ª edição holo' });
+const PKM_RAR = {
+  'common': ['Comum', 'common'], 'uncommon': ['Incomum', 'uncommon'], 'rare': ['Rara', 'rare'], 'rare holo': ['Rara holo', 'rare'], 'holo rare': ['Rara holo', 'rare'],
+  'double rare': ['Rara dupla', 'mythic'], 'ultra rare': ['Ultra rara', 'mythic'], 'illustration rare': ['Rara ilustração', 'mythic'],
+  'special illustration rare': ['Rara ilustração especial', 'mythic'], 'hyper rare': ['Hiper rara', 'mythic'], 'secret rare': ['Rara secreta', 'mythic'],
+  'rare holo lv.x': ['Rara holo LV.X', 'mythic'], 'rare prime': ['Rara Prime', 'mythic'], 'legend': ['Lenda', 'mythic'], 'amazing rare': ['Rara incrível', 'mythic'],
+  'shiny rare': ['Rara brilhante', 'mythic'], 'radiant rare': ['Rara radiante', 'mythic'], 'ace spec rare': ['ACE SPEC', 'mythic'], 'promo': ['Promo', 'special'],
+  'classic collection': ['Coleção clássica', 'special'], 'none': ['—', null],
+};
+const pkmRar = t => { const k = String(t || '').toLowerCase(); return PKM_RAR[k] || (k ? [t, /secret|ultra|hyper|illustration|shiny|full art|vmax|vstar|ex|gx/.test(k) ? 'mythic' : /rare/.test(k) ? 'rare' : null] : ['—', null]); };
+const PKM_TYPE = { Fire: 'Fogo', Water: 'Água', Grass: 'Planta', Lightning: 'Elétrico', Psychic: 'Psíquico', Fighting: 'Lutador', Darkness: 'Escuridão', Metal: 'Metal', Dragon: 'Dragão', Fairy: 'Fada', Colorless: 'Incolor' };
+const PKM_CAT = { Pokemon: 'Pokémon', Trainer: 'Treinador', Energy: 'Energia' };
+const pkmTypeLine = c => [PKM_CAT[c.category] || c.category, (c.types || []).map(t => PKM_TYPE[t] || t).join('/'), c.trainerType || c.energyType || ''].filter(Boolean).join(' · ');
+const pkmImg = (base, q = 'low') => base ? `${base}/${q}.webp` : '';
+const pkmSymbol = imageUrl => { const m = String(imageUrl || '').match(/assets\.tcgdex\.net\/[^/]+\/([^/]+)\/([^/]+)\//); return m ? `https://assets.tcgdex.net/univ/${m[1]}/${m[2]}/symbol.png` : ''; };
+const pkmSetIcon = url => url ? `<img class="seticon pk" src="${esc(url)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '';
+const PKM_TCG = {
+  nonfoil: ['normal', 'unlimited', 'unlimited-normal'], holo: ['holofoil', 'unlimited-holofoil', 'unlimitedHolofoil'], reverse: ['reverse-holofoil', 'reverseHolofoil'],
+  first: ['1st-edition-normal', '1stEditionNormal', '1st-edition', '1stEdition'], 'first-holo': ['1st-edition-holofoil', '1stEditionHolofoil'],
+};
+function pkmPrice(card, finish) {
+  const pr = (card && card.pricing) || {}, tp = pr.tcgplayer || {};
+  let usd = null, tpKey = null;
+  for (const k of PKM_TCG[finish] || []) { const v = tp[k]?.marketPrice ?? tp[k]?.midPrice; if (v != null) { usd = num(v); tpKey = k; break; } }
+  if (usd == null) for (const k of Object.keys(tp)) { const v = tp[k]?.marketPrice; if (v != null) { usd = num(v); tpKey = k; break; } }
+  const cm = pr.cardmarket || {};
+  const holo = ['holo', 'reverse', 'first-holo'].includes(finish);
+  const eur = num(holo ? (cm['avg30-holo'] ?? cm['avg-holo'] ?? cm.avg30 ?? cm.avg) : (cm.avg30 ?? cm.avg ?? cm.trend));
+  return { usd: usd > 0 ? usd : null, eur: eur > 0 ? eur : null, tpKey };
+}
+const pkFinishes = v => { const o = PKM_FINISH.filter(([, k]) => v && v[k]).map(([f]) => f); if (v && v.firstEdition && v.holo) o.push('first-holo'); return o.length ? o : ['nonfoil']; };
+
+let pkSets = null;
+async function pkLoadSets() {
+  if (pkSets) return pkSets;
+  const r = await fetch(TCGDEX + '/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ sets { id name releaseDate serie { id name } cardCount { official } } }' }) });
+  const j = await r.json();
+  pkSets = new Map((j.data?.sets || []).map(s => [s.id, s]));
+  return pkSets;
+}
+const pkDetCache = new Map();
+async function pkDetail(id, lang = 'en') {
+  const k = lang + '|' + id;
+  if (!pkDetCache.has(k)) pkDetCache.set(k, fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(id)}`).then(r => r.ok ? r.json() : null).catch(() => null));
+  return pkDetCache.get(k);
+}
+async function pkList(lang, q) {
+  const r = await fetch(`${TCGDEX}/${lang}/cards?name=${encodeURIComponent(q)}&pagination:itemsPerPage=250`);
+  return r.ok ? r.json() : [];
+}
+
+// ---- busca / autocomplete ----
+let pkTimer, pkSeq = 0, pkSugg = [], pkIdx = -1;
+let pk = { name: '', prints: [], ptIds: new Map(), sel: null, finish: {}, lang: {}, prices: new Map(), det: new Map() };
+let pkOrder = (() => { try { return localStorage.getItem('magic.gridOrder') || 'asc'; } catch { return 'asc'; } })();
+const pkInput = $('#pq'), pkBox = $('#psugg');
+pkInput.addEventListener('input', () => {
+  clearTimeout(pkTimer);
+  const v = pkInput.value.trim();
+  if (v.length < 2) { pkBox.style.display = 'none'; return; }
+  pkTimer = setTimeout(async () => {
+    const seq = ++pkSeq;
+    try {
+      const [en, pt] = await Promise.all([pkList('en', v), pkList('pt', v)]);
+      if (seq !== pkSeq) return;
+      const nv = norm(v), seen = new Map();
+      for (const [arr, lang] of [[en, 'en'], [pt, 'pt']]) for (const c of arr || []) {
+        const key = norm(c.name); if (!seen.has(key)) seen.set(key, { name: c.name, lang, n: 0 }); seen.get(key).n++;
+      }
+      pkSugg = [...seen.values()].sort((a, b) => (norm(a.name).startsWith(nv) ? 0 : 1) - (norm(b.name).startsWith(nv) ? 0 : 1) || a.name.length - b.name.length).slice(0, 14);
+      pkIdx = -1;
+      pkBox.innerHTML = pkSugg.length ? pkSugg.map((s, i) => `<div data-i="${i}">${esc(s.name)} <span class="muted" style="font-size:12px">· ${s.n} impressão(ões)${s.lang === 'pt' ? ' · PT' : ''}</span></div>`).join('') : '<div class="muted">nada encontrado</div>';
+      pkBox.style.display = 'block';
+      pkBox.querySelectorAll('[data-i]').forEach(d => d.onmousedown = e => { e.preventDefault(); pkPick(pkSugg[+d.dataset.i]); });
+    } catch (e) { pkBox.innerHTML = `<div class="warn">${esc(netMsg(e))}</div>`; pkBox.style.display = 'block'; }
+  }, 250);
+});
+pkInput.addEventListener('keydown', e => {
+  const items = pkBox.querySelectorAll('[data-i]');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!items.length) return; pkIdx = (pkIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; items.forEach((d, i) => d.classList.toggle('hl', i === pkIdx)); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (pkIdx >= 0 && pkSugg[pkIdx]) pkPick(pkSugg[pkIdx]); else if (pkSugg[0]) pkPick(pkSugg[0]); else if (pkInput.value.trim()) pkPick({ name: pkInput.value.trim(), lang: 'en' }); }
+  else if (e.key === 'Escape') pkBox.style.display = 'none';
+});
+pkInput.addEventListener('blur', () => setTimeout(() => pkBox.style.display = 'none', 150));
+$('#pBtn').onclick = () => { const v = pkInput.value.trim(); if (v) pkPick(pkSugg.find(s => norm(s.name) === norm(v)) || pkSugg[0] || { name: v, lang: 'en' }); };
+
+async function pkPick(s) {
+  pkBox.style.display = 'none';
+  pkInput.value = s.name;
+  const out = $('#pkmOut');
+  out.innerHTML = '<p class="status">buscando todas as impressões…</p>';
+  try {
+    const sets = await pkLoadSets();
+    const [en, pt] = await Promise.all([pkList('en', 'eq:' + s.name), pkList('pt', 'eq:' + s.name)]);
+    const ptIds = new Map((pt || []).map(c => [c.id, c]));
+    let ids = [...new Set([...(en || []).map(c => c.id), ...ptIds.keys()])];
+    if (!ids.length) { out.innerHTML = '<p class="warn">Nenhuma carta com esse nome.</p>'; return; }
+    if (ids.length > 120) ids = ids.slice(0, 120);
+    const enById = new Map((en || []).map(c => [c.id, c]));
+    const prints = ids.map(id => {
+      const b = enById.get(id) || ptIds.get(id);
+      const setId = id.slice(0, id.lastIndexOf('-'));
+      const st = sets.get(setId) || {};
+      return { id, localId: b.localId, name: (enById.get(id) || {}).name || null, ptName: (ptIds.get(id) || {}).name || null,
+        image: (enById.get(id) || {}).image || null, ptImage: (ptIds.get(id) || {}).image || null,
+        setId, setName: st.name || setId, serie: st.serie?.name || '', release: st.releaseDate || null, official: st.cardCount?.official || null };
+    });
+    pk = { name: s.name, prints, ptIds, sel: null, finish: {}, lang: {}, prices: new Map(), det: new Map() };
+    pkRender();
+    // carrega detalhes (variantes, raridade e preço) em segundo plano, 4 de cada vez
+    let i = 0;
+    const work = async () => {
+      while (i < prints.length) {
+        const p = prints[i++];
+        const d = await pkDetail(p.id, 'en') || await pkDetail(p.id, 'pt');
+        if (pk.prints !== prints) return;
+        if (d) { pk.det.set(p.id, d); if (!p.name) p.name = d.name; if (!p.image) p.image = d.image; }
+        pkUpdateCard(p);
+      }
+    };
+    await Promise.all([work(), work(), work(), work()]);
+  } catch (e) { out.innerHTML = `<p class="warn">Erro: ${esc(netMsg(e))}</p>`; }
+}
+const pkYear = p => p.release ? +p.release.slice(0, 4) : null;
+function pkOwned(p) { return collGame().filter(r => r.scryfall_id === 'pkm:' + p.id).reduce((t, r) => t + r.quantity, 0); }
+function pkCardHtml(p) {
+  const d = pk.det.get(p.id), owned = pkOwned(p);
+  const fins = d ? pkFinishes(d.variants) : ['nonfoil'];
+  const fin = pk.finish[p.id] && fins.includes(pk.finish[p.id]) ? pk.finish[p.id] : fins[0];
+  const lang = pk.lang[p.id] || (p.ptImage || pk.ptIds.has(p.id) ? 'pt' : 'en');
+  const imgBase = lang === 'pt' && p.ptImage ? p.ptImage : (p.image || p.ptImage);
+  const pr = d ? pkPrice(d, fin) : null;
+  const brl = pr ? (pr.usd != null ? toBRL(pr.usd, 'usd') : toBRL(pr.eur, 'eur')) : null;
+  const rar = d ? pkmRar(d.rarity) : null;
+  return `<div class="pcard${owned ? ' owned' : ''}" data-pk="${esc(p.id)}">
+    <div class="pview" data-pkdet="${esc(p.id)}" title="Ver detalhes">
+      ${imgBase ? `<img src="${esc(pkmImg(imgBase))}" alt="" loading="lazy">` : `<div class="noimg">sem imagem</div>`}
+      ${owned ? `<span class="tagc">${owned}× na coleção</span>` : ''}
+      ${lang !== 'en' ? `<span class="tagl">${esc(lang.toUpperCase())}</span>` : ''}
+      <div class="pn">${pkmSetIcon(imgBase ? pkmSymbol(imgBase) : '')}${esc(p.setName)} <span class="bry">${pkYear(p) || '?'}</span></div>
+      <div class="pm">#${esc(p.localId)}${p.official ? '/' + p.official : ''}${rar && rar[0] !== '—' ? ' · ' + esc(rar[0]) : ''}${p.ptName && p.ptName !== p.name ? ' · “' + esc(p.ptName) + '”' : ''}</div>
+      <div class="pp">${d ? (brl != null ? fBRL(brl) + ` <span class="muted" style="font-size:11px">${pr.usd != null ? fUSD(pr.usd) : fEUR(pr.eur)}</span>` : '<span class="muted">sem preço</span>') : '<span class="muted">…</span>'}</div>
+    </div>
+    <div class="langs">${['pt', 'en'].filter(l => l === 'en' || pk.ptIds.has(p.id)).map(l => `<button class="lb${l === lang ? ' on' : ''}" data-pkl="${l}">${l.toUpperCase()}</button>`).join('')}
+      ${fins.length > 1 ? `<select class="langsel pkfin" title="Acabamento">${fins.map(f => `<option value="${f}" ${f === fin ? 'selected' : ''}>${FINISH_PT[f]}</option>`).join('')}</select>` : `<span class="muted" style="font-size:11px;align-self:center">${FINISH_PT[fin]}</span>`}</div>
+    <div class="pact"><button class="gadd" data-pkadd>+ Adicionar</button><button class="gdet" data-pkdet="${esc(p.id)}" title="Detalhes">🔍</button></div>
+  </div>`;
+}
+function pkSorted() {
+  const d = pkOrder === 'desc' ? -1 : 1;
+  return [...pk.prints].sort((a, b) => ((a.release || '9999') < (b.release || '9999') ? -1 : (a.release || '9999') > (b.release || '9999') ? 1 : String(a.localId).localeCompare(String(b.localId), undefined, { numeric: true })) * d);
+}
+function pkRender() {
+  const out = $('#pkmOut');
+  const list = pkSorted();
+  out.innerHTML = `<div class="phead"><h3>${esc(pk.name)} <span class="muted" style="font-weight:400">· ${list.length} impressão(ões)${pk.ptIds.size ? ` · ${pk.ptIds.size} em português` : ''}</span></h3>
+    <button class="ghost" id="pkOrd">${pkOrder === 'asc' ? '▲ mais antigas primeiro' : '▼ mais recentes primeiro'}</button></div>
+    <p class="hint" style="margin-top:6px">Escolha o idioma (PT/EN) e o acabamento da sua carta e toque em <b>+ Adicionar</b>. Toque na imagem para ver detalhes e preços de cada variante.</p>
+    <div class="pgrid" id="pkGrid">${list.map(pkCardHtml).join('')}</div>`;
+  $('#pkOrd').onclick = () => { pkOrder = pkOrder === 'asc' ? 'desc' : 'asc'; try { localStorage.setItem('magic.gridOrder', pkOrder); } catch {} pkRender(); };
+  out.querySelectorAll('.pcard').forEach(pkBind);
+}
+function pkUpdateCard(p) {
+  const el = document.querySelector(`.pcard[data-pk="${CSS.escape(p.id)}"]`);
+  if (!el) return;
+  const tmp = document.createElement('div'); tmp.innerHTML = pkCardHtml(p);
+  const n = tmp.firstElementChild; el.replaceWith(n); pkBind(n);
+}
+function pkBind(el) {
+  const p = pk.prints.find(x => x.id === el.dataset.pk); if (!p) return;
+  el.querySelectorAll('[data-pkl]').forEach(b => b.onclick = () => { pk.lang[p.id] = b.dataset.pkl; pkUpdateCard(p); });
+  const fs = el.querySelector('.pkfin'); if (fs) fs.onchange = () => { pk.finish[p.id] = fs.value; pkUpdateCard(p); };
+  el.querySelectorAll('[data-pkdet]').forEach(b => b.onclick = () => pkOpenDetails(p.id));
+  el.querySelector('[data-pkadd]').onclick = async e => { e.target.disabled = true; await pkAdd(p); e.target.disabled = false; };
+}
+async function pkItem(p, finish, lang) {
+  const d = pk.det.get(p.id) || await pkDetail(p.id, 'en') || await pkDetail(p.id, 'pt');
+  const ptD = pk.ptIds.has(p.id) ? await pkDetail(p.id, 'pt') : null;
+  const pr = pkPrice(d, finish), rar = pkmRar(d?.rarity);
+  const imgBase = lang === 'pt' && p.ptImage ? p.ptImage : (p.image || p.ptImage || d?.image);
+  const ptName = ptD?.name || p.ptName;
+  return {
+    game: 'pkm', scryfall_id: 'pkm:' + p.id, oracle_id: null, name: d?.name || p.name || ptName,
+    set_code: p.setId, set_name: p.setName, collector_number: String(p.localId) + (p.official ? '/' + p.official : ''),
+    finish, image_url: imgBase ? pkmImg(imgBase) : null, price_usd: pr.usd, price_eur: pr.eur,
+    rarity: rar[1], rarity_label: rar[0] !== '—' ? rar[0] : null, reserved: false,
+    typed_name: ptName && ptName !== (d?.name || p.name) ? ptName : null, released_at: p.release, lang,
+    type_line: d ? pkmTypeLine(d) : null, colors: null,
+  };
+}
+async function pkAdd(p) {
+  if (!user) { openAuth(); return; }
+  const d = pk.det.get(p.id);
+  const fins = d ? pkFinishes(d.variants) : ['nonfoil'];
+  const finish = pk.finish[p.id] && fins.includes(pk.finish[p.id]) ? pk.finish[p.id] : fins[0];
+  const lang = pk.lang[p.id] || (pk.ptIds.has(p.id) ? 'pt' : 'en');
+  try {
+    const item = await pkItem(p, finish, lang);
+    const row = await addToColl(item, 1);
+    toast(`${row.typed_name || row.name} (${p.setName}) · ${FINISH_PT[finish]} → ${row.quantity}× na coleção`);
+    pkUpdateCard(p); renderCollBadge();
+    saveValueToday().then(loadValueHistory).catch(() => {});
+  } catch (e) { toast('Erro: ' + (e.message || e)); }
+}
+
+// ---- detalhes (Pokémon) ----
+async function pkOpenDetails(id, row = null) {
+  det = { pk: true, id, row };
+  $('#detBox').innerHTML = '<button class="dclose" id="detX" aria-label="Fechar">×</button><p class="status">carregando detalhes…</p>';
+  $('#detX').onclick = closeDetails;
+  $('#detModal').classList.add('open'); document.body.style.overflow = 'hidden';
+  try {
+    const [d, ptD, sets] = await Promise.all([pkDetail(id, 'en'), pkDetail(id, 'pt'), pkLoadSets()]);
+    if (!det || det.id !== id) return;
+    const c = d || ptD;
+    if (!c) throw new Error('carta não encontrada no TCGdex');
+    const st = sets.get(c.set?.id) || {};
+    const lang = row?.lang || (ptD ? 'pt' : 'en');
+    const imgBase = lang === 'pt' && ptD?.image ? ptD.image : (c.image || ptD?.image);
+    const fins = pkFinishes(c.variants);
+    const pr = c.pricing || {}, tp = pr.tcgplayer || {}, cm = pr.cardmarket || {};
+    const tpRows = Object.entries(tp).filter(([, v]) => v && typeof v === 'object' && (v.marketPrice != null || v.midPrice != null));
+    const rar = pkmRar(c.rarity);
+    const usdB = v => v == null ? '—' : `${fUSD(v)} <span class="muted">≈ ${fBRL(toBRL(v, 'usd'))}</span>`;
+    const eurB = v => v == null ? '—' : `${fEUR(v)} <span class="muted">≈ ${fBRL(toBRL(v, 'eur'))}</span>`;
+    const TP_PT = { normal: 'Normal', holofoil: 'Holo', 'reverse-holofoil': 'Reverse holo', '1st-edition-holofoil': '1ª edição holo', '1st-edition-normal': '1ª edição', unlimited: 'Ilimitada', 'unlimited-holofoil': 'Ilimitada holo' };
+    $('#detBox').innerHTML = `<button class="dclose" id="detX" aria-label="Fechar">×</button>
+      <div class="dgrid">
+        <div class="dimg">${imgBase ? `<img src="${esc(pkmImg(imgBase, 'high'))}" alt="${esc(c.name)}">` : '<p class="muted">sem imagem</p>'}</div>
+        <div>
+          <h2>${esc(ptD && lang === 'pt' ? ptD.name : c.name)} ${lang !== 'en' ? langTag(lang) : ''}</h2>
+          ${ptD && ptD.name !== (d || {}).name && d ? `<div class="muted">${esc(d.name)}</div>` : ''}
+          <div class="sub" style="margin-top:6px">${esc(pkmTypeLine(c))}${c.hp ? ' · HP ' + c.hp : ''}${c.illustrator ? ' · ilustração de ' + esc(c.illustrator) : ''}</div>
+          <div class="dsec"><h4>Edição</h4><div class="kv">
+            <div><span>Coleção</span>${pkmSetIcon(pkmSymbol(imgBase))}${esc(c.set?.name || st.name || '')}</div>
+            <div><span>Série</span>${esc(st.serie?.name || '—')}</div>
+            <div><span>Número</span>#${esc(c.localId)}${c.set?.cardCount?.official ? '/' + c.set.cardCount.official : ''}</div>
+            <div><span>Lançamento</span>${fmtDate(st.releaseDate)}</div>
+            <div><span>Raridade</span>${esc(rar[0])}</div>
+            <div><span>Acabamentos</span>${fins.map(f => FINISH_PT[f]).join(', ')}</div>
+            <div><span>Em português</span>${ptD ? 'sim' : 'não encontrada no catálogo'}</div>
+            ${c.regulationMark ? `<div><span>Marca de regulamento</span>${esc(c.regulationMark)}</div>` : ''}
+          </div></div>
+          <div class="dsec"><h4>Preços</h4>
+            ${tpRows.length ? `<table style="margin-top:0"><tr><th>TCGplayer (EUA)</th><th class="num">Mercado</th><th class="num">Mínimo</th></tr>
+              ${tpRows.map(([k, v]) => `<tr><td>${TP_PT[k] || esc(k)}</td><td class="num">${usdB(num(v.marketPrice ?? v.midPrice))}</td><td class="num">${usdB(num(v.lowPrice))}</td></tr>`).join('')}</table>` : '<p class="muted" style="margin:0">Sem preço no TCGplayer.</p>'}
+            ${cm.avg != null || cm.trend != null ? `<table><tr><th>Cardmarket (Europa)</th><th class="num">Média 30 dias</th><th class="num">Mínimo</th></tr>
+              <tr><td>Normal</td><td class="num">${eurB(num(cm.avg30 ?? cm.avg))}</td><td class="num">${eurB(num(cm.low))}</td></tr>
+              ${cm['avg-holo'] != null || cm['avg30-holo'] != null ? `<tr><td>Holo / reverse</td><td class="num">${eurB(num(cm['avg30-holo'] ?? cm['avg-holo']))}</td><td class="num">${eurB(num(cm['low-holo']))}</td></tr>` : ''}</table>` : ''}
+            <p class="hint" style="margin:10px 0 0">Preços via TCGdex (TCGplayer em US$, Cardmarket em €), convertidos pelo câmbio do topo. Não há fonte brasileira com API aberta.</p>
+          </div>
+          ${c.attacks?.length || c.abilities?.length ? `<div class="dsec"><h4>Jogo</h4><div class="oracle">${(c.abilities || []).map(a => `<b>${esc(a.type || 'Habilidade')}: ${esc(a.name)}</b> — ${esc(a.effect || '')}`).concat((c.attacks || []).map(a => `<b>${esc(a.name)}</b>${a.damage ? ' (' + esc(a.damage) + ')' : ''}${a.effect ? ' — ' + esc(a.effect) : ''}`)).join('\n')}</div></div>` : ''}
+          <div class="links">
+            ${Object.values(tp).find(v => v?.productId) ? `<a href="https://www.tcgplayer.com/product/${Object.values(tp).find(v => v?.productId).productId}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}
+            ${cm.idProduct ? `<a href="https://www.cardmarket.com/en/Pokemon/Products?idProduct=${cm.idProduct}" target="_blank" rel="noopener">Cardmarket ↗</a>` : ''}
+            <a href="https://www.ligapokemon.com.br/?view=cards/search&card=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">LigaPokémon ↗</a>
+          </div>
+        </div>
+      </div>`;
+    $('#detX').onclick = closeDetails;
+    const im = $('#detBox .dimg img'); if (im) im.onclick = () => im.classList.toggle('zoom');
+  } catch (e) {
+    $('#detBox').innerHTML = `<button class="dclose" id="detX">×</button><p class="warn">Não consegui carregar: ${esc(netMsg(e))}</p>`;
+    $('#detX').onclick = closeDetails;
+  }
+}
+
+// ---- atualização de preços das cartas Pokémon da coleção ----
+async function refreshPkmPrices(onProgress) {
+  const rows = (coll || []).filter(r => gameOf(r) === 'pkm');
+  let n = 0;
+  for (const r of rows) {
+    pkDetCache.delete('en|' + r.scryfall_id.replace(/^pkm:/, ''));
+    const d = await pkDetail(r.scryfall_id.replace(/^pkm:/, ''), 'en');
+    if (d) {
+      const pr = pkPrice(d, r.finish);
+      const { data, error } = await db.from('collection_items').update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString() }).eq('id', r.id).select().single();
+      if (!error) Object.assign(r, data);
+    }
+    onProgress && onProgress(++n, rows.length);
+  }
+  return n;
+}
+
+
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-18.1';
+const APP_VERSION = '2026-11-18.2';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
@@ -1759,6 +2102,7 @@ async function checkVersion() {
     }
   } catch {}
 }
+setGame(game);
 checkVersion();
 setInterval(checkVersion, 5 * 60 * 1000);
 
