@@ -154,7 +154,7 @@
   .chip.banned{border-color:#7a3d3d;color:var(--bad)}
   .chip.restricted{border-color:#7a6a3d;color:var(--accent)}
   .chip.not_legal{color:#5d626c}
-  svg.chart{width:100%;height:auto;display:block}
+  svg.chart{width:100%;height:150px;display:block}
   footer{color:var(--muted);font-size:12px;padding:0 24px 24px;line-height:1.5}
   /* modal */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
@@ -933,7 +933,7 @@ function renderPrint() {
           <td class="num">${fEUR(r[2])}</td><td class="num brl">${fBRL(toBRL(r[2], 'eur'))}</td></tr>`).join('')}
       </table>${c._fromEn ? `<div class="muted" style="font-size:12px;margin-top:6px">* Impressão em ${LANG_PT[c.lang] || c.lang}: o Scryfall não tem preço próprio, então uso o preço da mesma carta em inglês. Confira o preço Brasil na LigaMagic.</div>` : ''}` : '<p class="warn">Sem preço registrado para esta edição.</p>'}
       <div class="colbox" id="colBox"></div>
-      <div class="panel2" id="histBox"><h4>Histórico de preço desta edição</h4><span class="muted">carregando…</span></div>
+      <div class="panel2" id="histBox" style="padding:${chOpen ? '12px 14px' : '8px 14px'}"><button class="vhtoggle" id="chToggle" aria-expanded="${chOpen}"><span class="chev">${chOpen ? '▾' : '▸'}</span> Histórico de preço desta edição</button><div id="chBody"></div></div>
       ${strengthHtml(c)}
       ${rangeHtml}
       <div class="links">
@@ -1020,17 +1020,20 @@ function lineChart(pts, fmt = fBRL) {
     <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
       <path d="${area}" fill="rgba(224,168,75,.12)"/>
       <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-      <text x="${L}" y="${H - 6}" fill="var(--muted)" font-size="11">${dd(pts[0].d)}</text>
-      <text x="${W - R}" y="${H - 6}" fill="var(--muted)" font-size="11" text-anchor="end">${dd(pts[pts.length - 1].d)}</text>
-    </svg>`;
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:2px"><span>${dd(pts[0].d)}</span><span>${dd(pts[pts.length - 1].d)}</span></div>`;
 }
 
+let chOpen = (() => { try { return localStorage.getItem('magic.chOpen') === '1'; } catch { return false; } })();
 async function loadCardHistory(card, finish) {
-  const box = $('#histBox'); if (!box) return;
-  const head = '<h4>Histórico de preço desta edição</h4>';
+  const tg = $('#chToggle');
+  if (tg) tg.onclick = () => { chOpen = !chOpen; try { localStorage.setItem('magic.chOpen', chOpen ? '1' : '0'); } catch {} renderPrint(); };
+  const box = $('#chBody'); if (!box || !chOpen) return;
+  box.style.marginTop = '8px';
+  const head = '';
   if (!db || !user) { box.innerHTML = head + '<span class="muted">Entre para ver o histórico.</span>'; return; }
   const { data, error } = await db.from('price_snapshots').select('*').eq('scryfall_id', card.id).order('captured_on').limit(400);
-  if (currentPrint !== card || !$('#histBox')) return;
+  if (currentPrint !== card || !$('#chBody')) return;
   if (error) { box.innerHTML = head + `<span class="warn">${esc(error.message)}</span>`; return; }
   const col = finish === 'foil' ? ['usd_foil', 'eur_foil'] : finish === 'etched' ? ['usd_etched', null] : ['usd', 'eur'];
   const pts = data.map(s => {
