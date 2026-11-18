@@ -170,6 +170,86 @@
   .eye:hover{color:var(--txt)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60}
   .toast.show{opacity:1}
+  .only-m{display:none}
+  .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* ===== Mobile ===== */
+  @media (max-width:680px){
+    body{font-size:15px;-webkit-text-size-adjust:100%}
+    header{padding:10px 12px;gap:8px}
+    h1{font-size:17px}
+    .hdr-right{gap:8px;width:100%;justify-content:space-between}
+    .rates{gap:6px;font-size:12px}
+    .rates input{width:62px;padding:4px 5px}
+    #rStatus{display:none}
+    .user{font-size:12px}
+    .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 8px 0;gap:4px;flex-wrap:nowrap}
+    .tab{flex:1;padding:10px 6px;font-size:14px;text-align:center;white-space:nowrap}
+    main{padding:0 6px 28px}
+    .pane{padding:12px 10px;border-radius:0 0 10px 10px}
+    footer{padding:0 12px 20px}
+    input,select,textarea{font-size:16px !important}
+    .searchrow{gap:8px}
+    .search{min-width:100%}
+    .searchrow .primary{flex:1}
+    .card{gap:14px;margin-top:14px}
+    .card > div,.dgrid > div{min-width:0}
+    .card > div:first-child{max-width:240px;margin:0 auto;width:100%}
+    .card h2{font-size:20px}
+    table:not(.ctable){display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+    th,td{padding:7px 6px}
+    .phead input:not([type=checkbox]){width:100%}
+    .pgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-height:none;overflow:visible}
+    .pact .gdet{width:34px;height:32px}
+    .pact .gadd{padding:7px 4px}
+    .langs .lb{font-size:11px;padding:4px 6px}
+    button.mini{width:34px;height:34px;font-size:17px}
+    input.qty{width:52px;padding:6px 4px}
+    button.ghost{padding:9px 12px}
+    .total{font-size:20px;margin-top:12px}
+    .total small{display:block;margin:4px 0 0}
+    /* filtros da coleção em grade */
+    .cfilters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .cfilters label{display:flex;flex-direction:column;gap:3px;font-size:12px;min-width:0}
+    .cfilters select{width:100%;max-width:none !important}
+    .cfilters label:first-child,.cfilters .collq,.cfilters .status{grid-column:1/-1}
+    .cfilters .collq{width:100% !important}
+    .only-m{display:inline}
+    .msort{display:flex;gap:8px;align-items:flex-end;margin-top:14px}
+    .msort label{flex:1;display:flex;flex-direction:column;gap:3px;font-size:12px}
+    .msort select{width:100%}
+    /* tabela da coleção vira lista de cartões */
+    .ctable,.ctable tbody{display:block}
+    .ctable tr:first-child{display:none}
+    .ctable tr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:10px;margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+    .ctable td{display:block;padding:0;border:none}
+    .ctable td[colspan]{width:100%}
+    .ctable .c-name{order:1;width:100%}
+    .ctable .c-name .thumb{width:46px;float:left;margin:0 10px 0 0}
+    .ctable .c-name .cname{font-weight:600}
+    .ctable .c-name input.tname{margin:4px 0 0;width:auto;max-width:calc(100% - 56px)}
+    .ctable .c-set{order:2;width:100%;font-size:12px;clear:both}
+    .ctable .c-lang{order:3}.ctable .c-rar{order:4}.ctable .c-year{order:5}
+    .ctable .c-color{order:6;font-size:12px}
+    .ctable .c-unit{order:7;width:100%;text-align:left;font-size:12px}
+    .ctable .c-qty{order:8;flex:1}
+    .ctable .c-unitbrl{order:9;font-size:12px}
+    .ctable .c-total{order:10;font-size:17px}
+    .ctable tr{position:relative}
+    .ctable .c-name{padding-right:64px}
+    .ctable .c-rm{position:absolute;top:10px;right:10px;font-size:12px}
+    .ctable select.langsel,.ctable select{padding:5px 6px;font-size:14px !important}
+    /* modal de detalhes em tela cheia */
+    #detModal{align-items:stretch}
+    .dbox{width:100vw;max-height:none;height:100dvh;border-radius:0;border:none;padding:14px 12px calc(20px + env(safe-area-inset-bottom))}
+    .dclose{width:40px;height:40px}
+    .dgrid{gap:16px}
+    .dimg{position:static;max-width:340px;margin:0 auto;width:100%}
+    .dbox h2{font-size:21px}
+    .dsec{padding:12px}
+    .kv{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+    .modal .box{width:94vw}
+    .toast{bottom:calc(16px + env(safe-area-inset-bottom));max-width:92vw}
+  }
 </style>
 </head>
 <body>
@@ -1413,11 +1493,11 @@ function renderColl() {
   }).sort(collComparator());
   const oldest = coll.reduce((m, r) => !m || (r.price_updated_at && r.price_updated_at < m) ? r.price_updated_at : m, null);
   out.innerHTML = `
-    <div class="row" style="margin-top:0">
+    <div class="row cfilters" style="margin-top:0">
       <label class="muted">Base de preço:
         <select id="collBasis"><option value="best" ${cur === 'best' ? 'selected' : ''}>Melhor disponível (CardTrader no idioma → TCGplayer)</option><option value="usd" ${cur === 'usd' ? 'selected' : ''}>USD · TCGplayer</option><option value="eur" ${cur === 'eur' ? 'selected' : ''}>EUR · Cardmarket</option></select>
       </label>
-      <input id="collQ" type="search" placeholder="🔍 buscar carta (inglês ou português)" value="${esc(collQuery)}" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px 10px;font-size:14px;width:260px">
+      <input id="collQ" class="collq" type="search" placeholder="🔍 buscar carta (inglês ou português)" value="${esc(collQuery)}" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px 10px;font-size:14px;width:260px">
       <label class="muted">Coleção:
         <select id="collSet" style="max-width:220px"><option value="">Todas</option>${[...new Map(coll.filter(r => r.set_code).map(r => [r.set_code, r.set_name || r.set_code])).entries()]
           .sort((a, b) => a[1].localeCompare(b[1])).map(([k, n]) => `<option value="${esc(k)}" ${collSet === k ? 'selected' : ''}>${esc(n)} (${esc(k.toUpperCase())}) · ${coll.filter(r => r.set_code === k).reduce((t, r) => t + r.quantity, 0)}</option>`).join('')}</select>
@@ -1442,22 +1522,27 @@ function renderColl() {
       ${vhOpen ? `<div id="vhBox" style="margin-top:8px">${valueHistHtml()}</div>` : ''}
     </div>
     ${noPrice ? `<div class="warn">${noPrice} item(ns) sem preço nessa base.</div>` : ''}
-    <table>
+    <div class="only-m msort"><label class="muted">Ordenar por
+      <select id="collSortM">${COLL_COLS.map(c => `<option value="${c.key}" ${collSort.key === c.key ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
+      <button class="ghost" id="collDirM" title="Inverter ordem">${collSort.dir > 0 ? '▲ crescente' : '▼ decrescente'}</button></div>
+    <table class="ctable">
       ${collHeaderHtml()}
       ${rows.length ? '' : '<tr><td colspan="11" class="muted" style="padding:18px 10px">Nenhuma carta encontrada com esses filtros.</td></tr>'}
       ${rows.map(({ r, u, ub, tb, b }) => `<tr>
-        <td style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
-        <td><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt=""><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
+        <td class="c-qty" style="white-space:nowrap"><button class="mini" data-id="${r.id}" data-d="-1">−</button> <input class="qty" type="number" min="0" step="1" value="${r.quantity}" data-q="${r.id}" title="Quantas você tem (0 remove)"> <button class="mini" data-id="${r.id}" data-d="1">+</button></td>
+        <td class="c-name"><span class="clickable" data-det="${r.id}" title="Ver detalhes"><img class="thumb" src="${esc(r.image_url || '')}" alt="" loading="lazy"><span class="cname">${esc(r.name)}</span></span>${r.finish !== 'nonfoil' ? ` <span class="muted">✦ ${FINISH_PT[r.finish]}</span>` : ''}${rlHtml(r.reserved)}
           <input class="tname" data-tn="${r.id}" value="${esc(r.typed_name || '')}" placeholder="+ nome em português" title="Nome como você conhece a carta"></td>
-        <td>${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
-        <td style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
-        <td>${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
-        <td>${yearSelect(r.user_year, edYear(r.released_at), `data-year="${r.id}"`)}</td>
-        <td class="muted">${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
-        <td class="num muted" style="white-space:nowrap">${cur === 'best' ? (u || '—') + srcTag(b) : fo(u)}</td><td class="num">${fBRL(ub)}</td><td class="num brl">${fBRL(tb)}</td>
-        <td><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
+        <td class="c-lang">${langSelect(r.lang, `data-lang="${r.id}"`)}</td>
+        <td class="c-color" style="white-space:nowrap">${r.colors == null ? '<span class="muted">—</span>' : manaHtml(r.mana_cost) + `<span class="cor">${colorLabel(r.colors, r.type_line)}</span>`}</td>
+        <td class="c-rar">${rarityHtml(r.rarity, r.set_code) || '<span class="muted">—</span>'}</td>
+        <td class="c-year">${yearSelect(r.user_year, edYear(r.released_at), `data-year="${r.id}"`)}</td>
+        <td class="c-set muted">${setIcon(r.set_code)}${esc(r.set_name || '')} <span style="white-space:nowrap">${esc((r.set_code || '').toUpperCase())} #${esc(r.collector_number)}</span></td>
+        <td class="c-unit num muted" style="white-space:nowrap">${cur === 'best' ? (u || '—') + srcTag(b) : fo(u)}</td><td class="c-unitbrl num"><span class="only-m muted">unit. </span>${fBRL(ub)}</td><td class="c-total num brl">${fBRL(tb)}</td>
+        <td class="c-rm"><button class="link" data-rm="${r.id}">remover</button></td></tr>`).join('')}
     </table>`;
   $('#collBasis').onchange = e => { collBasis = e.target.value; renderColl(); };
+  $('#collSortM').onchange = e => { collSort = { key: e.target.value, dir: ['name', 'lang', 'set'].includes(e.target.value) ? 1 : -1 }; renderColl(); };
+  $('#collDirM').onclick = () => { collSort.dir *= -1; renderColl(); };
   $('#vhToggle').onclick = () => { vhOpen = !vhOpen; try { localStorage.setItem('magic.vhOpen', vhOpen ? '1' : '0'); } catch {} renderColl(); };
   out.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => {
     const k = th.dataset.sort, col = COLL_COLS.find(c => c.key === k);
@@ -1611,7 +1696,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.7';
+const APP_VERSION = '2026-11-17.8';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
