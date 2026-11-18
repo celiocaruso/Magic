@@ -212,6 +212,20 @@
   .gamesel button{background:none;border:none;color:var(--muted);padding:7px 16px;cursor:pointer;font-size:14px;font-weight:600}
   .gamesel button+button{border-left:1px solid var(--line)}
   .gamesel button.on{background:var(--accent);color:var(--ink)}
+  .gamesel:empty{display:none}
+  .gameadd{background:none;border:1px dashed var(--line);color:var(--muted);border-radius:999px;padding:7px 14px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+  .gameadd:hover{border-color:var(--accent);color:var(--accent)}
+  .gameadd.pulse{border-style:solid;border-color:var(--accent);color:var(--accent)}
+  .modal .box.gbox{width:min(640px,94vw);max-height:90vh;overflow:auto}
+  .glist{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .gopt{display:flex;gap:10px;align-items:center;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;color:var(--txt);font-family:inherit;position:relative}
+  .gopt:hover{border-color:var(--accent)}
+  .gopt.mine{border-color:var(--ok)}
+  .gopt .gi{font-size:22px;width:30px;text-align:center;flex:none}
+  .gopt .gn{font-size:14px;font-weight:600;line-height:1.2}
+  .gopt .gs{font-size:11px;color:var(--muted);margin-top:2px}
+  .gopt .gs.ok{color:var(--ok)}
+  .gopt .grm{position:absolute;bottom:5px;right:8px;font-size:11px}
   img.seticon.pk{filter:none;opacity:1;width:auto;max-width:22px}
   .pcard .noimg{aspect-ratio:488/680;display:flex;align-items:center;justify-content:center;background:var(--panel);border-radius:6px;color:var(--muted);font-size:12px}
   .pcard .langs .langsel{font-size:11px;padding:2px 22px 2px 6px;margin-left:auto}
@@ -264,8 +278,11 @@
     .revimg{width:48px}
     .revctl select{flex:1 1 calc(50% - 6px);min-width:0}
     .revctl label{flex:1 1 calc(50% - 6px)}
-    .gamesel{flex:1}
-    .gamesel button{flex:1;padding:9px 10px}
+    .gamebar{flex-wrap:wrap}
+    .gamebar > .muted{display:none}
+    .gamesel{flex:1 1 auto;overflow-x:auto;max-width:100%}
+    .gamesel button{flex:1 0 auto;padding:9px 12px}
+    .glist{grid-template-columns:1fr 1fr}
     .tabs{position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 8px 0;gap:4px;flex-wrap:nowrap}
     .tab{flex:1;padding:10px 6px;font-size:14px;text-align:center;white-space:nowrap}
     main{padding:0 6px 28px}
@@ -356,9 +373,14 @@
 
 <div class="gamebar">
   <span class="muted">Jogo</span>
-  <div class="gamesel" role="group" aria-label="Jogo">
-    <button type="button" data-g="mtg">Magic</button>
-    <button type="button" data-g="pkm">Pokémon</button>
+  <div class="gamesel" id="gameSel" role="group" aria-label="Jogo"></div>
+  <button type="button" class="gameadd" id="gameAdd" title="Cadastrar uma nova coleção de outro jogo">+ Nova coleção</button>
+</div>
+<div class="modal" id="gameModal" role="dialog" aria-modal="true" aria-label="Escolher jogo">
+  <div class="box gbox">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Cadastrar nova coleção</h3><button class="dclose" id="gameX" aria-label="Fechar" style="position:static;float:none">×</button></div>
+    <p class="hint" style="margin:6px 0 12px">Escolha o jogo de cartas. Ele passa a aparecer no seletor <b>Jogo</b>, no alto da tela.</p>
+    <div class="glist" id="gameList"></div>
   </div>
 </div>
 <div class="tabs">
@@ -381,6 +403,7 @@
     </div>
     <div id="pkmOut"><p class="hint" style="margin-top:14px">Digite o nome de uma carta para ver todas as impressões publicadas, com preços do TCGplayer e do Cardmarket.</p></div>
    </div>
+   <div id="otherSingle" style="display:none"></div>
    <div id="mtgSingle">
     <div class="searchrow">
       <div class="search">
@@ -469,7 +492,26 @@ const API = 'https://api.scryfall.com';
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let user = null;
-const GAMES = { mtg: 'Magic', pkm: 'Pokémon' };
+const GAME_LIST = [
+  { id: 'mtg', name: 'Magic: The Gathering', short: 'Magic', icon: '🧙', ready: true },
+  { id: 'pkm', name: 'Pokémon Estampas Ilustradas', short: 'Pokémon', icon: '⚡', ready: true },
+  { id: 'ygo', name: 'Yu-Gi-Oh!', short: 'Yu-Gi-Oh!', icon: '🐉' },
+  { id: 'op', name: 'One Piece Card Game', short: 'One Piece', icon: '🏴‍☠️' },
+  { id: 'lor', name: 'Disney Lorcana', short: 'Lorcana', icon: '✨' },
+  { id: 'dbs', name: 'Dragon Ball Super Card Game', short: 'Dragon Ball', icon: '🐲' },
+  { id: 'dgm', name: 'Digimon Card Game', short: 'Digimon', icon: '🦖' },
+  { id: 'fab', name: 'Flesh and Blood', short: 'Flesh and Blood', icon: '⚔️' },
+  { id: 'swu', name: 'Star Wars: Unlimited', short: 'Star Wars', icon: '🚀' },
+  { id: 'rift', name: 'Riftbound (League of Legends)', short: 'Riftbound', icon: '🌀' },
+  { id: 'gun', name: 'Gundam Card Game', short: 'Gundam', icon: '🤖' },
+  { id: 'vg', name: 'Cardfight!! Vanguard', short: 'Vanguard', icon: '🛡️' },
+  { id: 'ws', name: 'Weiss Schwarz', short: 'Weiss Schwarz', icon: '🎴' },
+  { id: 'ua', name: 'Union Arena', short: 'Union Arena', icon: '🎯' },
+  { id: 'alt', name: 'Altered', short: 'Altered', icon: '🌿' },
+  { id: 'sor', name: 'Sorcery: Contested Realm', short: 'Sorcery', icon: '🔮' },
+];
+const GAMES = Object.fromEntries(GAME_LIST.map(g => [g.id, g.short]));
+const GAME_INFO = Object.fromEntries(GAME_LIST.map(g => [g.id, g]));
 let game = (() => { try { const g = localStorage.getItem('magic.game'); return GAMES[g] ? g : 'mtg'; } catch { return 'mtg'; } })();
 const gameOf = r => r.game || 'mtg';
 const collGame = () => (coll || []).filter(r => gameOf(r) === game);
@@ -731,6 +773,7 @@ if (db) {
     const was = user?.id;
     user = session?.user || null;
     renderUser();
+    if (typeof renderGameBar === 'function') renderGameBar();
     if (user?.id !== was) { coll = null; valueHist = null; batches = null; revBatch = null; if (typeof renderPhotos === 'function' && $('#pane-photos').classList.contains('active')) renderPhotos(); loadColl(); if (currentPrint) syncCurrent(); }
   });
 }
@@ -741,7 +784,7 @@ async function loadColl() {
   if (!db || !user) { coll = null; renderColl(); return; }
   const { data, error } = await db.from('collection_items').select('*').order('name');
   if (error) { $('#collOut').innerHTML = `<p class="warn">Erro ao carregar coleção: ${esc(error.message)}</p>`; return; }
-  coll = data; renderColl();
+  coll = data; renderGameBar(); renderColl();
   saveValueToday().then(loadValueHistory).catch(() => {});
 }
 async function addToColl(item, qty = 1, onlyIfNew = false) {
@@ -1593,7 +1636,7 @@ function renderColl() {
   if (!user) { out.innerHTML = '<p class="hint">Entre para ver e guardar sua coleção.</p><button class="primary" id="ccIn">Entrar</button>'; $('#ccIn').onclick = openAuth; return; }
   if (!coll) { out.innerHTML = '<p class="status">carregando coleção…</p>'; return; }
   const all = collGame(), isPk = game === 'pkm';
-  if (!all.length) { out.innerHTML = `<p class="hint">Sua coleção de ${GAMES[game]} está vazia. ${isPk ? 'Busque uma carta na aba Carta e toque em “+ Adicionar”.' : 'Toda carta avaliada com "Carta da coleção" marcada entra aqui.'}</p>`; return; }
+  if (!all.length) { out.innerHTML = `<p class="hint">Sua coleção de ${GAMES[game]} está vazia. ${!GAME_INFO[game].ready ? 'A busca de cartas deste jogo chega em breve.' : isPk ? 'Busque uma carta na aba Carta e toque em “+ Adicionar”.' : 'Toda carta avaliada com "Carta da coleção" marcada entra aqui.'}</p>`; return; }
   const cur = collBasis, fo = cur === 'usd' ? fUSD : fEUR;
   let total = 0, totalOrig = 0, count = 0, noPrice = 0, ctCount = 0;
   const nq = norm(collQuery);
@@ -1819,14 +1862,71 @@ async function refreshPrices() {
 }
 
 /* ================= Jogo selecionado (Magic / Pokémon) ================= */
+function myGames() {
+  let list = [];
+  const meta = user?.user_metadata?.games;
+  if (Array.isArray(meta)) list = meta.filter(g => GAMES[g]);
+  else { try { list = JSON.parse(localStorage.getItem('magic.games') || '[]').filter(g => GAMES[g]); } catch {} }
+  for (const r of coll || []) { const g = gameOf(r); if (!list.includes(g)) list.push(g); }
+  if (!list.length) list = ['mtg'];
+  return list;
+}
+async function saveMyGames(list) {
+  try { localStorage.setItem('magic.games', JSON.stringify(list)); } catch {}
+  if (user) user.user_metadata = { ...(user.user_metadata || {}), games: list };
+  if (user && db) { const { data } = await db.auth.updateUser({ data: { games: list } }); if (data?.user) user = data.user; }
+}
+function renderGameBar() {
+  const list = myGames();
+  if (!list.includes(game)) game = list[0];
+  $('#gameSel').innerHTML = list.map(g => `<button type="button" data-g="${g}" class="${g === game ? 'on' : ''}" title="${esc(GAME_INFO[g].name)}">${GAME_INFO[g].short}</button>`).join('');
+  $('#gameSel').querySelectorAll('button').forEach(b => b.onclick = () => setGame(b.dataset.g));
+  $('#gameAdd').classList.toggle('pulse', list.length < 2);
+}
+function openGameModal() {
+  const list = myGames();
+  const count = g => (coll || []).filter(r => gameOf(r) === g).reduce((t, r) => t + r.quantity, 0);
+  $('#gameList').innerHTML = GAME_LIST.map(g => {
+    const mine = list.includes(g.id), n = count(g.id);
+    return `<button type="button" class="gopt${mine ? ' mine' : ''}" data-gopt="${g.id}">
+      <span class="gi">${g.icon}</span><span><div class="gn">${esc(g.name)}</div>
+      <div class="gs${mine ? ' ok' : ''}">${mine ? `✓ na sua conta${n ? ' · ' + n + ' carta(s)' : ''}` : g.ready ? 'busca, fotos e preços' : 'em breve: catálogo e preços'}</div></span>
+      ${mine && !n && list.length > 1 ? `<span class="link grm" data-grm="${g.id}">remover</span>` : ''}</button>`;
+  }).join('');
+  $('#gameList').querySelectorAll('[data-gopt]').forEach(b => b.onclick = async e => {
+    const g = b.dataset.gopt;
+    if (e.target.dataset.grm) {
+      e.stopPropagation();
+      await saveMyGames(myGames().filter(x => x !== g));
+      if (game === g) game = myGames()[0];
+      renderGameBar(); setGame(game); openGameModal(); return;
+    }
+    const l = myGames(); if (!l.includes(g)) { l.push(g); await saveMyGames(l); toast(`Coleção de ${GAME_INFO[g].short} criada`); }
+    $('#gameModal').classList.remove('open');
+    setGame(g);
+  });
+  $('#gameModal').classList.add('open');
+}
+$('#gameAdd').onclick = openGameModal;
+$('#gameX').onclick = () => $('#gameModal').classList.remove('open');
+$('#gameModal').addEventListener('click', e => { if (e.target.id === 'gameModal') $('#gameModal').classList.remove('open'); });
+function otherHtml() {
+  const g = GAME_INFO[game];
+  return `<div class="panel2" style="margin-top:0"><h4>${g.icon} ${esc(g.name)}</h4>
+    <p style="margin:0 0 8px">A coleção de <b>${esc(g.short)}</b> já está na sua conta, mas a integração com o catálogo e os preços deste jogo ainda está em construção.</p>
+    <p class="hint" style="margin:0">Quando ficar pronta, você vai poder buscar as cartas pelo nome, cadastrar por foto e ver o valor em R$, como já funciona em Magic e Pokémon.</p></div>`;
+}
 function setGame(g) {
   if (!GAMES[g]) return;
   const changed = g !== game;
   game = g; try { localStorage.setItem('magic.game', g); } catch {}
-  document.querySelectorAll('.gamesel button').forEach(b => b.classList.toggle('on', b.dataset.g === g));
+  if (!myGames().includes(g)) { const l = myGames(); l.push(g); saveMyGames(l); }
+  renderGameBar();
   document.documentElement.dataset.game = g;
   $('#mtgSingle').style.display = g === 'mtg' ? '' : 'none';
   $('#pkmSingle').style.display = g === 'pkm' ? '' : 'none';
+  $('#otherSingle').style.display = GAME_INFO[g].ready ? 'none' : '';
+  if (!GAME_INFO[g].ready) $('#otherSingle').innerHTML = otherHtml();
   const lt = document.querySelector('.tab[data-tab=list]');
   lt.style.display = g === 'mtg' ? '' : 'none';
   if (g !== 'mtg' && lt.classList.contains('active')) document.querySelector('.tab[data-tab=single]').click();
@@ -1834,7 +1934,6 @@ function setGame(g) {
   renderColl();
   if ($('#pane-photos').classList.contains('active')) renderPhotos();
 }
-document.querySelectorAll('.gamesel button').forEach(b => b.onclick = () => setGame(b.dataset.g));
 
 /* ================= Pokémon (dados: TCGdex — api.tcgdex.net, gratuito, multilíngue) ================= */
 const TCGDEX = 'https://api.tcgdex.net/v2';
@@ -2257,6 +2356,7 @@ function renderPhotos() {
   if (!db) { out.innerHTML = '<p class="warn">Banco indisponível.</p>'; return; }
   if (!user) { out.innerHTML = '<p class="hint">Entre para fotografar e cadastrar suas cartas.</p><button class="primary" id="phIn">Entrar</button>'; $('#phIn').onclick = openAuth; return; }
   if (!batches) { out.innerHTML = '<p class="status">carregando…</p>'; loadBatches().then(renderPhotos); return; }
+  if (!GAME_INFO[game].ready) { out.innerHTML = otherHtml(); return; }
   const mine = batches.filter(b => (b.game || 'mtg') === game);
   const rb = mine.find(b => b.id === revBatch && b.status === 'review');
   out.innerHTML = `
@@ -2320,7 +2420,7 @@ function renderPhotos() {
 const confirmDel = b => b.status === 'done' || b.status === 'error' || window.confirm('Excluir esta foto? As cartas ainda não cadastradas dela serão perdidas.');
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-18.6';
+const APP_VERSION = '2026-11-18.7';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
