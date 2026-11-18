@@ -125,6 +125,8 @@
   .langs .lb:hover{color:var(--txt);border-color:var(--accent)}
   .langs .lb.on{background:var(--accent);color:#1a1205;border-color:var(--accent)}
   .langs .lb.own{box-shadow:inset 0 -2px 0 var(--ok)}
+  .pcard.br{background:linear-gradient(180deg,#1d3a2a,var(--panel2) 60%)}
+  .bry{display:inline-block;background:#1f6f3f;color:#fff;font-size:11px;font-weight:700;padding:0 6px;border-radius:4px;margin-left:4px}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input:not([type=checkbox]){background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -139,7 +141,7 @@
   .pact .gdet{background:none;border:1px solid var(--line);color:var(--txt);border-radius:6px;width:28px;height:26px;cursor:pointer;font-size:12px}
   .pcard:hover{border-color:var(--line)}
   .pcard.sel{border-color:var(--accent)}
-  .pcard img{width:100%;border-radius:6px;aspect-ratio:488/680;object-fit:cover;background:#111;display:block}
+  .pcard .pview > img{width:100%;border-radius:6px;aspect-ratio:488/680;object-fit:cover;background:#111;display:block}
   .pcard .pn{font-size:12px;font-weight:600;margin-top:5px;line-height:1.25}
   .pcard .pm{font-size:11px;color:var(--muted)}
   .pcard .pp{font-size:12px;color:var(--accent);margin-top:2px}
@@ -842,7 +844,7 @@ const langLabel = p => (p.lang === 'zhs' ? 'ZH-S' : p.lang === 'zht' ? 'ZH-T' : 
 function buildGroups() {
   const m = new Map();
   for (const p of prints) {
-    const k = p.set + '|' + p.collector_number;
+    const k = p.set + '|' + p.collector_number + (p._brYear ? '|' + p._brYear : '');
     if (!m.has(k)) m.set(k, { key: k, prints: [] });
     m.get(k).prints.push(p);
   }
@@ -871,12 +873,12 @@ function groupCardHtml(g, gi) {
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
   const key = norm(g.prints.map(p => (SET_PT[p.set] || '') + ' ' + p.set_name + ' ' + p.set + ' ' + p.released_at + ' ' + (p.artist || '') + ' ' + (LANG_PT[p.lang] || p.lang) + ' ' + p.lang + ' ' + (p.printed_name || '') + (p._brYear ? ' ' + p._brYear + ' tiragem brasileira br' : '')).join(' ') + ' ' + tags + (groupQty ? ' na colecao' : ''));
   const sel = g.prints.some(p => sameVariant(p, currentPrint));
-  return `<div class="pcard ${sel ? 'sel' : ''} ${groupQty ? 'owned' : ''}" data-g="${gi}" data-k="${esc(key)}" data-haspt="${g.prints.some(p => p.lang === 'pt') ? 1 : 0}">
+  return `<div class="pcard ${sel ? 'sel' : ''} ${groupQty ? 'owned' : ''} ${x._brYear ? 'br' : ''}" data-g="${gi}" data-k="${esc(key)}" data-haspt="${g.prints.some(p => p.lang === 'pt') ? 1 : 0}">
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
       ${x.lang !== 'en' ? `<span class="tagl">${esc(langLabel(x))}</span>` : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
-      <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}</div>
-      ${SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
+      <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}${x._brYear ? ` <span class="bry">${x._brYear}</span>` : ''}</div>
+      ${x._brYear ? '<div class="pen">tiragem brasileira · português</div>' : SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
       <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${yr} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
       <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
     </div>
@@ -1595,7 +1597,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.3';
+const APP_VERSION = '2026-11-17.4';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
