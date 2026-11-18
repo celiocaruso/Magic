@@ -840,6 +840,18 @@ const LANG_ORDER = ['en', 'pt', 'es', 'fr', 'de', 'it', 'ja', 'ko', 'ru', 'zhs',
 let groups = [];          // [{ key, prints: [...] }]
 const gsel = new Map();   // key -> índice da impressão escolhida no grupo
 const langLabel = p => (p.lang === 'zhs' ? 'ZH-S' : p.lang === 'zht' ? 'ZH-T' : String(p.lang).toUpperCase()) + (p._brYear ? ' ' + p._brYear : '');
+// Ordem cronológica pelo ano exibido (tiragem brasileira conta como 1996); empate: data de lançamento, coleção, número
+let gridOrder = (() => { try { return localStorage.getItem('magic.gridOrder') || 'asc'; } catch { return 'asc'; } })();
+const groupYear = g => g.prints[0]._brYear || edYear(g.prints[0].released_at);
+function sortGroups() {
+  const d = gridOrder === 'desc' ? -1 : 1;
+  const cn = n => String(n).padStart(8, '0');
+  groups.sort((a, b) => d * ((groupYear(a) - groupYear(b))
+    || a.prints[0].released_at.localeCompare(b.prints[0].released_at)
+    || a.prints[0].set.localeCompare(b.prints[0].set)
+    || cn(a.prints[0].collector_number).localeCompare(cn(b.prints[0].collector_number))
+    || (a.prints[0]._brYear || 0) - (b.prints[0]._brYear || 0)));
+}
 function buildGroups() {
   const m = new Map();
   for (const p of prints) {
@@ -848,6 +860,7 @@ function buildGroups() {
     m.get(k).prints.push(p);
   }
   groups = [...m.values()];
+  sortGroups();
   for (const g of groups) g.prints.sort((a, b) => (LANG_ORDER.indexOf(a.lang) + 1 || 99) - (LANG_ORDER.indexOf(b.lang) + 1 || 99) || (a._brYear || 0) - (b._brYear || 0));
   gsel.clear();
 }
@@ -950,6 +963,7 @@ function renderPrint() {
   <div class="phead">
     <h3>Edições e ilustrações (${groups.length}) <span class="muted" style="font-size:12px;font-weight:400">· ${prints.length} impressões em ${new Set(prints.map(p => p.lang)).size} idiomas · clique na imagem para ver · escolha o idioma nos botões · <b style="color:var(--accent)">+ Adicionar</b> para guardar · 🔍 detalhes</span></h3>
     <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <label class="muted" style="font-size:13px">Ordem: <select id="pOrder"><option value="asc" ${gridOrder === 'asc' ? 'selected' : ''}>mais antigas primeiro</option><option value="desc" ${gridOrder === 'desc' ? 'selected' : ''}>mais recentes primeiro</option></select></label>
       <label class="chk"><input type="checkbox" id="ponlyPt" ${onlyPt ? 'checked' : ''}> só em português</label>
       <input id="pfilter" placeholder="filtrar: coleção (ex.: Era Glacial), ano, artista, borda…" value="${esc(prevFilter)}">
     </span>
@@ -997,6 +1011,7 @@ function renderPrint() {
       });
     };
     $('#pfilter').oninput = applyFilter;
+    $('#pOrder').onchange = e => { gridOrder = e.target.value; try { localStorage.setItem('magic.gridOrder', gridOrder); } catch {} sortGroups(); refreshCardView(); };
     $('#ponlyPt').onchange = e => { onlyPt = e.target.checked; try { localStorage.setItem('magic.onlyPt', onlyPt ? '1' : '0'); } catch {} gsel.clear(); refreshCardView(); };
     applyFilter();
   }
@@ -1596,7 +1611,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.5';
+const APP_VERSION = '2026-11-17.6';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
