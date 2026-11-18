@@ -1932,7 +1932,7 @@ function pkCardHtml(p) {
   const fin = pk.finish[p.id] && fins.includes(pk.finish[p.id]) ? pk.finish[p.id] : fins[0];
   const lang = pk.lang[p.id] || (p.ptImage || pk.ptIds.has(p.id) ? 'pt' : 'en');
   const imgBase = lang === 'pt' && p.ptImage ? p.ptImage : (p.image || p.ptImage);
-  const pr = d ? pkPrice(d, fin) : null;
+  const pr = d ? pkmPrice(d, fin) : null;
   const brl = pr ? (pr.usd != null ? toBRL(pr.usd, 'usd') : toBRL(pr.eur, 'eur')) : null;
   const rar = d ? pkmRar(d.rarity) : null;
   return `<div class="pcard${owned ? ' owned' : ''}" data-pk="${esc(p.id)}">
@@ -1979,7 +1979,7 @@ function pkBind(el) {
 async function pkItem(p, finish, lang) {
   const d = pk.det.get(p.id) || await pkDetail(p.id, 'en') || await pkDetail(p.id, 'pt');
   const ptD = pk.ptIds.has(p.id) ? await pkDetail(p.id, 'pt') : null;
-  const pr = pkPrice(d, finish), rar = pkmRar(d?.rarity);
+  const pr = pkmPrice(d, finish), rar = pkmRar(d?.rarity);
   const imgBase = lang === 'pt' && p.ptImage ? p.ptImage : (p.image || p.ptImage || d?.image);
   const ptName = ptD?.name || p.ptName;
   return {
@@ -2076,7 +2076,7 @@ async function refreshPkmPrices(onProgress) {
     pkDetCache.delete('en|' + r.scryfall_id.replace(/^pkm:/, ''));
     const d = await pkDetail(r.scryfall_id.replace(/^pkm:/, ''), 'en');
     if (d) {
-      const pr = pkPrice(d, r.finish);
+      const pr = pkmPrice(d, r.finish);
       const { data, error } = await db.from('collection_items').update({ price_usd: pr.usd, price_eur: pr.eur, price_updated_at: new Date().toISOString() }).eq('id', r.id).select().single();
       if (!error) Object.assign(r, data);
     }
@@ -2087,7 +2087,7 @@ async function refreshPkmPrices(onProgress) {
 
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-18.2';
+const APP_VERSION = '2026-11-18.3';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
