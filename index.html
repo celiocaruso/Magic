@@ -887,7 +887,7 @@ function groupCardHtml(g, gi) {
   const sel = g.prints.some(p => sameVariant(p, currentPrint));
   return `<div class="pcard ${sel ? 'sel' : ''} ${groupQty ? 'owned' : ''} ${x._brYear ? 'br' : ''}" data-g="${gi}" data-k="${esc(key)}" data-haspt="${g.prints.some(p => p.lang === 'pt') ? 1 : 0}">
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
-      ${x.lang !== 'en' ? `<span class="tagl">${esc(langLabel(x))}</span>` : ''}
+      ${x.lang !== 'en' ? `<span class="tagl">${esc(String(x.lang).toUpperCase())}</span>` : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
       <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)} <span class="bry" title="${x._brYear ? 'Tiragem brasileira' : 'Ano de lançamento'}">${x._brYear || x.released_at.slice(0, 4)}</span></div>
       ${x._brYear ? `<div class="pen">${esc(x.set_name)} · tiragem brasileira</div>` : SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
@@ -1611,7 +1611,7 @@ async function refreshPrices() {
 }
 
 /* ================= Versão do app: avisa quando há versão nova publicada ================= */
-const APP_VERSION = '2026-11-17.6';
+const APP_VERSION = '2026-11-17.7';
 async function checkVersion() {
   try {
     const t = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
