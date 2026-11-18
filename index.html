@@ -120,6 +120,11 @@
   img.seticon{width:15px;height:15px;vertical-align:-3px;margin-right:4px;filter:invert(1) opacity(.85)}
   .pcard .pen{font-size:11px;color:var(--muted)}
   .phead .chk{font-size:13px}
+  .langs{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+  .langs .lb{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:4px;font-size:10px;font-weight:700;padding:2px 5px;cursor:pointer}
+  .langs .lb:hover{color:var(--txt);border-color:var(--accent)}
+  .langs .lb.on{background:var(--accent);color:#1a1205;border-color:var(--accent)}
+  .langs .lb.own{box-shadow:inset 0 -2px 0 var(--ok)}
   .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px;flex-wrap:wrap}
   .phead h3{margin:0;font-size:16px}
   .phead input:not([type=checkbox]){background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 10px;font-size:13px;width:220px}
@@ -657,18 +662,18 @@ async function pick(name) {
         let page = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' + encodeURIComponent(q));
         out.push(...page.data);
         let guard = 0;
-        while (page.has_more && guard++ < 6) { page = await sf(page.next_page); out.push(...page.data); }
+        while (page.has_more && guard++ < 10) { page = await sf(page.next_page); out.push(...page.data); }
       } catch (e) { if (e.status !== 404) throw e; }
       return out;
     };
-    const base = await getAll('!"' + name + '" game:paper');
-    const pts = await getAll('!"' + name + '" game:paper lang:pt');
+    const all = await getAll('!"' + name + '" game:paper lang:any');
     const seen = new Set();
-    for (const c of [...base, ...pts]) if (!seen.has(c.id)) { seen.add(c.id); prints.push(c); }
+    for (const c of all) if (!seen.has(c.id)) { seen.add(c.id); prints.push(c); }
     if (!prints.length) throw new Error('nenhuma impressão encontrada');
     prints.sort((a, b) => b.released_at.localeCompare(a.released_at) || a.set.localeCompare(b.set) || (a.lang === 'en' ? -1 : 1));
     borrowEnPrices(prints);
     prints = prints.flatMap(p => p.lang === 'pt' && edYear(p.released_at) === BR_REPRINT_YEAR - 1 ? [p, { ...p, _brYear: BR_REPRINT_YEAR }] : [p]);
+    buildGroups();
     if (db && user && !coll) await loadColl();
     const owned = coll ? prints.find(p => coll.some(r => rowMatches(r, p))) : null;
     if (owned) {
@@ -796,7 +801,7 @@ function renderColBox() {
     const autoLang = ['en', 'pt'].includes(currentPrint.lang) ? currentPrint.lang : 'pt';
     box.className = 'colbox' + (multi ? ' ask' : '');
     box.innerHTML = `<span class="st">${multi ? 'É esta a sua?' : 'Fora da coleção'}</span>
-      ${multi ? `<span style="width:100%;order:-1;font-size:13px">Esta carta tem ${prints.length} edições/ilustrações. Clique nas imagens abaixo para comparar (use <b>ver detalhes</b> para a imagem ampliada) e adicione as que você tem com <b>+ Adicionar</b>.</span>` : ''}
+      ${multi ? `<span style="width:100%;order:-1;font-size:13px">Esta carta tem ${groups.length} edições/ilustrações, em ${new Set(prints.map(p => p.lang)).size} idioma(s). Clique nas imagens abaixo para comparar, escolha o <b>idioma</b> da sua carta nos botões (EN, PT, PT 1996…) e adicione com <b>+ Adicionar</b>.</span>` : ''}
       <span style="display:flex;gap:6px;align-items:center">Tenho <button class="mini" data-d="-1">−</button><input class="qty" id="addQty" type="number" min="1" step="1" value="${pendingQty}"><button class="mini" data-d="1">+</button> unid.</span>
       <span style="display:flex;gap:6px;align-items:center">Idioma ${langSelect(pendingLang || autoLang, 'id="addLang"')}</span>
       <span style="display:flex;gap:6px;align-items:center">Ano da minha carta ${yearSelect(pendingYear, edYear(currentPrint.released_at), 'id="addYear"')}</span>
@@ -829,28 +834,57 @@ function strengthHtml(c) {
     <div class="chips">${chips}</div></div>`;
 }
 
-function printCardHtml(x, i) {
+// ---- Grade agrupada: uma edição (coleção + número) por cartão; idiomas/tiragens como botões ----
+const LANG_ORDER = ['en', 'pt', 'es', 'fr', 'de', 'it', 'ja', 'ko', 'ru', 'zhs', 'zht', 'he', 'la', 'grc', 'ar', 'sa', 'ph'];
+let groups = [];          // [{ key, prints: [...] }]
+const gsel = new Map();   // key -> índice da impressão escolhida no grupo
+const langLabel = p => (p.lang === 'zhs' ? 'ZH-S' : p.lang === 'zht' ? 'ZH-T' : String(p.lang).toUpperCase()) + (p._brYear ? ' ' + p._brYear : '');
+function buildGroups() {
+  const m = new Map();
+  for (const p of prints) {
+    const k = p.set + '|' + p.collector_number;
+    if (!m.has(k)) m.set(k, { key: k, prints: [] });
+    m.get(k).prints.push(p);
+  }
+  groups = [...m.values()];
+  for (const g of groups) g.prints.sort((a, b) => (LANG_ORDER.indexOf(a.lang) + 1 || 99) - (LANG_ORDER.indexOf(b.lang) + 1 || 99) || (a._brYear || 0) - (b._brYear || 0));
+  gsel.clear();
+}
+function groupPick(g) {
+  if (gsel.has(g.key)) return g.prints[gsel.get(g.key)] || g.prints[0];
+  let i = g.prints.findIndex(p => sameVariant(p, currentPrint));
+  if (i < 0 && coll) i = g.prints.findIndex(p => coll.some(r => rowMatches(r, p)));
+  if (i < 0 && onlyPt) i = g.prints.findIndex(p => p.lang === 'pt');
+  if (i < 0) i = g.prints.findIndex(p => p.lang === 'en');
+  return g.prints[Math.max(0, i)];
+}
+const ownedQty = p => coll ? coll.filter(r => rowMatches(r, p)).reduce((t, r) => t + r.quantity, 0) : 0;
+
+function groupCardHtml(g, gi) {
+  const x = groupPick(g);
   const usd = num(x.prices.usd) ?? num(x.prices.usd_foil) ?? num(x.prices.usd_etched);
   const foilOnly = x.prices.usd == null && usd != null;
-  const rows = coll ? coll.filter(r => rowMatches(r, x)) : [];
-  const qty = rows.reduce((t, r) => t + r.quantity, 0);
+  const qty = ownedQty(x);
+  const groupQty = g.prints.reduce((t, p) => t + ownedQty(p), 0);
   const yr = x._brYear ? `<b style="color:var(--txt)">${x._brYear}</b> (tiragem BR)` : x.released_at.slice(0, 4);
   const art = x.artist ? ' · ' + x.artist : '';
   const tags = [x.frame_effects?.includes('showcase') && 'showcase', BORDER_PT[x.border_color] || x.border_color, x.full_art && 'arte total', x.promo && 'promo'].filter(Boolean).join(', ');
-  const key = norm((SET_PT[x.set] || '') + ' ' + x.set_name + ' ' + x.set + ' ' + x.released_at + ' ' + (x.artist || '') + ' ' + tags + ' ' + (LANG_PT[x.lang] || x.lang) + ' ' + x.lang + ' ' + (x.printed_name || '') + (qty ? ' na colecao' : '') + (x._brYear ? ' ' + x._brYear + ' tiragem brasileira br' : ''));
-  const sel = sameVariant(x, currentPrint);
-  return `<div class="pcard ${sel ? 'sel' : ''} ${qty ? 'owned' : ''}" data-i="${i}" data-k="${esc(key)}">
+  const key = norm(g.prints.map(p => (SET_PT[p.set] || '') + ' ' + p.set_name + ' ' + p.set + ' ' + p.released_at + ' ' + (p.artist || '') + ' ' + (LANG_PT[p.lang] || p.lang) + ' ' + p.lang + ' ' + (p.printed_name || '') + (p._brYear ? ' ' + p._brYear + ' tiragem brasileira br' : '')).join(' ') + ' ' + tags + (groupQty ? ' na colecao' : ''));
+  const sel = g.prints.some(p => sameVariant(p, currentPrint));
+  return `<div class="pcard ${sel ? 'sel' : ''} ${groupQty ? 'owned' : ''}" data-g="${gi}" data-k="${esc(key)}" data-haspt="${g.prints.some(p => p.lang === 'pt') ? 1 : 0}">
     <div class="pview" role="button" tabindex="0" title="Ver esta edição${esc(art)}">
-      ${x.lang === 'pt' ? `<span class="tagl">${x._brYear ? 'PT · ' + x._brYear : 'PT'}</span>` : ''}
+      ${x.lang !== 'en' ? `<span class="tagl">${esc(langLabel(x))}</span>` : ''}
       <img loading="lazy" src="${esc(img(x).small || img(x).normal || '')}" alt="">
       <div class="pn">${setIcon(x.set)}${esc(SET_PT[x.set] || x.set_name)}</div>
       ${SET_PT[x.set] ? `<div class="pen">${esc(x.set_name)}</div>` : ''}
       <div class="pm">${x.set.toUpperCase()} #${esc(x.collector_number)} · ${yr} · ${RARITY_PT[x.rarity] || esc(x.rarity)}${tags ? ' · ' + esc(tags) : ''}</div>
       <div class="pp">${usd != null ? fBRL(toBRL(usd, 'usd')) + (foilOnly ? ' (foil)' : '') + (x._fromEn ? ' <span class="muted" title="preço da versão em inglês">*</span>' : '') : '<span class="muted">sem preço</span>'}</div>
     </div>
+    ${g.prints.length > 1 ? `<div class="langs" title="Idiomas/tiragens desta edição — clique no da sua carta">${g.prints.map((p, j) =>
+      `<button class="lb ${p === x ? 'on' : ''} ${ownedQty(p) ? 'own' : ''}" data-gp="${j}" title="${esc((LANG_PT[p.lang] || p.lang) + (p._brYear ? ' · tiragem brasileira ' + p._brYear : '') + (p.printed_name ? ' · ' + p.printed_name : '') + (ownedQty(p) ? ' · você tem ' + ownedQty(p) : ''))}">${esc(langLabel(p))}</button>`).join('')}</div>` : ''}
     <div class="pact">
       ${qty ? `<button class="mini" data-gq="-1" title="Tirar uma">−</button><span class="gq">✓ ${qty}</span><button class="mini" data-gq="1" title="Mais uma">+</button>`
-            : `<button class="gadd" data-gadd="1">+ Adicionar</button>`}
+            : `<button class="gadd" data-gadd="1">+ Adicionar ${x.lang !== 'en' ? esc(langLabel(x)) : ''}</button>`}
       <button class="gdet" data-gdet="1" title="Ver detalhes / imagem ampliada">🔍</button>
     </div>
   </div>`;
@@ -913,7 +947,7 @@ function renderPrint() {
   </div>
   ${prints.length > 1 ? `
   <div class="phead">
-    <h3>Edições e ilustrações (${prints.length}) <span class="muted" style="font-size:12px;font-weight:400">· clique na imagem para ver · <b style="color:var(--accent)">+ Adicionar</b> para guardar · 🔍 detalhes</span></h3>
+    <h3>Edições e ilustrações (${groups.length}) <span class="muted" style="font-size:12px;font-weight:400">· ${prints.length} impressões em ${new Set(prints.map(p => p.lang)).size} idiomas · clique na imagem para ver · escolha o idioma nos botões · <b style="color:var(--accent)">+ Adicionar</b> para guardar · 🔍 detalhes</span></h3>
     <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <label class="chk"><input type="checkbox" id="ponlyPt" ${onlyPt ? 'checked' : ''}> só em português</label>
       <input id="pfilter" placeholder="filtrar: coleção (ex.: Era Glacial), ano, artista, borda…" value="${esc(prevFilter)}">
@@ -922,7 +956,7 @@ function renderPrint() {
   <div class="hint" style="margin:8px 0 0">Para achar a sua: compare o <b>símbolo da coleção</b> (à direita, na linha do tipo da carta), o <b>idioma</b> e a <b>cor da borda</b>. O ano mostrado é o do lançamento original; tiragens brasileiras podem trazer um ano posterior impresso (ex.: Era Glacial em português com 1996) — nesse caso, escolha a edição e ajuste o "Ano da minha carta".</div>
   <div style="display:none">
   </div>
-  <div class="pgrid" id="pgrid">${prints.map(printCardHtml).join('')}</div>` : ''}`;
+  <div class="pgrid" id="pgrid">${groups.map(groupCardHtml).join('')}</div>` : ''}`;
   renderColBox();
   loadCardHistory(c, currentFinish);
   $('#finSel').onchange = e => { awaitingChoice = false; changeSelection(currentPrint, e.target.value); };
@@ -930,7 +964,14 @@ function renderPrint() {
   if (grid) {
     grid.scrollTop = prevScroll;
     grid.querySelectorAll('.pcard').forEach(card => {
-      const np = prints[+card.dataset.i];
+      const g = groups[+card.dataset.g];
+      const np = groupPick(g);
+      card.querySelectorAll('[data-gp]').forEach(b => b.onclick = () => {
+        gsel.set(g.key, +b.dataset.gp);
+        const p = g.prints[+b.dataset.gp];
+        awaitingChoice = false;
+        changeSelection(p, (p.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(p));
+      });
       const view = () => { awaitingChoice = false; changeSelection(np, (np.finishes || []).includes(currentFinish) ? currentFinish : defaultFinish(np)); };
       const pv = card.querySelector('.pview');
       pv.onclick = view;
@@ -951,12 +992,11 @@ function renderPrint() {
     const applyFilter = () => {
       const q = norm($('#pfilter').value);
       grid.querySelectorAll('.pcard').forEach(b => {
-        const pt = prints[+b.dataset.i].lang === 'pt';
-        b.style.display = (!q || b.dataset.k.includes(q)) && (!onlyPt || pt) ? '' : 'none';
+        b.style.display = (!q || b.dataset.k.includes(q)) && (!onlyPt || b.dataset.haspt === '1') ? '' : 'none';
       });
     };
     $('#pfilter').oninput = applyFilter;
-    $('#ponlyPt').onchange = e => { onlyPt = e.target.checked; try { localStorage.setItem('magic.onlyPt', onlyPt ? '1' : '0'); } catch {} applyFilter(); };
+    $('#ponlyPt').onchange = e => { onlyPt = e.target.checked; try { localStorage.setItem('magic.onlyPt', onlyPt ? '1' : '0'); } catch {} gsel.clear(); refreshCardView(); };
     applyFilter();
   }
 }
